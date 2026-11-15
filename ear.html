@@ -3,47 +3,87 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
-    <meta name="theme-color" content="#0b0f14" />
+    <meta name="theme-color" content="#08090b" />
     <title>GEMA · Ear</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" />
     <style>
-      :root { --bg:#0b0f14; --fg:#e8eef5; --muted:#8a96a3; --accent:#7c5cff; --ok:#2ecc71; --warn:#f5a623; --bad:#ff4d4f; }
-      * { box-sizing: border-box; }
-      html, body { margin:0; height:100%; background:var(--bg); color:var(--fg);
-        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-tap-highlight-color: transparent; }
-      body { display:flex; flex-direction:column; padding:16px; gap:14px; }
-      .top { display:flex; justify-content:space-between; align-items:center; font-size:14px; color:var(--muted); }
-      .dot { width:10px; height:10px; border-radius:50%; display:inline-block; margin-right:6px; background:var(--muted); vertical-align:middle; }
-      .dot.live { background:var(--ok); } .dot.local { background:var(--warn); } .dot.error { background:var(--bad); }
-      .ear { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; border-radius:20px;
-        background:#121923; transition: background .15s; min-height: 240px; }
-      .ear.flash { background: var(--bad); }
-      .letter { font-size: 38vw; line-height:1; font-weight:800; letter-spacing:-2px; }
-      @media (min-width: 600px) { .letter { font-size: 180px; } }
-      .sub { color:var(--muted); font-size:15px; margin-top:6px; text-align:center; padding: 0 12px; }
-      .bars { display:grid; gap:10px; }
-      .bar { height:18px; background:#1b2430; border-radius:9px; position:relative; overflow:hidden; }
-      .bar > i { position:absolute; inset:0 auto 0 0; width:0; background:var(--accent); border-radius:9px; transition: width .05s linear; }
-      .bar > b { position:absolute; top:0; bottom:0; width:2px; background:var(--warn); }
-      .bar.score > i { background: var(--bad); }
-      .label { display:flex; justify-content:space-between; font-size:13px; color:var(--muted); margin-bottom:4px; }
-      button { font:inherit; font-size:20px; font-weight:700; padding:18px; border:0; border-radius:14px; background:var(--accent); color:white; width:100%; }
-      button.ghost { background:#1b2430; font-size:16px; padding:14px; }
-      .pick { display:grid; gap:12px; }
-      .pick input { font:inherit; font-size:22px; padding:14px; border-radius:12px; border:1px solid #2a3542; background:#121923; color:var(--fg); text-transform:uppercase; text-align:center; letter-spacing:4px; }
-      .row { display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; }
+      /* Same design tokens as the mission map (index.html) */
+      :root {
+        --bg:#08090b; --card:rgba(20,22,26,.9); --card-2:#1c1f24; --card-3:#262a30;
+        --line:rgba(255,255,255,.08); --line-2:rgba(255,255,255,.16);
+        --text:#eef1f4; --muted:#8a929c; --dim:#5d646d;
+        --green:#3be07c; --green-bg:#173d27; --amber:#ffb020; --red:#ff4d5e; --blue:#5fd0ff;
+        --hud:"Chakra Petch", ui-monospace, Consolas, monospace;
+        --ui:Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      }
+      * { box-sizing:border-box; }
+      html, body { margin:0; min-height:100%; background:var(--bg); color:var(--text); font:14px/1.35 var(--ui); -webkit-tap-highlight-color:transparent; }
+      body { display:flex; flex-direction:column; padding:14px; gap:12px; min-height:100vh;
+        background:radial-gradient(1200px 600px at 50% -10%, #12161c 0%, var(--bg) 60%); }
       .hidden { display:none !important; }
-      .note { font-size:12px; color:var(--muted); text-align:center; }
-      .eye { position:relative; border-radius:14px; overflow:hidden; background:#000; }
+
+      /* top bar */
+      .top { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+      .logo { font:700 18px/1 var(--hud); letter-spacing:.22em; color:#fff; }
+      .chips { display:flex; gap:6px; align-items:center; }
+      .chip { display:inline-flex; align-items:center; gap:6px; font:600 11px var(--hud); letter-spacing:.1em; text-transform:uppercase;
+        padding:5px 9px; border-radius:6px; background:var(--card-2); border:1px solid var(--line); color:var(--muted); }
+      .chip b { color:#fff; letter-spacing:.18em; }
+      .dot { width:8px; height:8px; border-radius:50%; background:var(--dim); }
+      .dot.live { background:var(--green); box-shadow:0 0 0 3px rgba(59,224,124,.18); }
+      .dot.local { background:var(--amber); } .dot.error { background:var(--red); }
+
+      /* role card */
+      .ear { flex:1; min-height:220px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px;
+        background:var(--card); border:1px solid var(--line); border-radius:16px; position:relative; overflow:hidden; transition:border-color .15s, background .15s; }
+      .ear::before { content:""; position:absolute; inset:0; background:repeating-linear-gradient(0deg, transparent 0 3px, rgba(255,255,255,.015) 3px 4px); pointer-events:none; }
+      .ear.flash { border-color:var(--red); background:rgba(255,77,94,.16); }
+      .role { font:600 11px var(--hud); letter-spacing:.16em; text-transform:uppercase; color:var(--muted); }
+      .letter { font:700 34vw/1 var(--hud); letter-spacing:.02em; color:#fff; }
+      @media (min-width:600px) { .letter { font-size:170px; } }
+      .sub { color:var(--muted); font-size:14px; text-align:center; padding:0 14px; }
+
+      /* meters */
+      .bars { display:grid; gap:10px; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px; }
+      .label { display:flex; justify-content:space-between; align-items:center; font:600 10px var(--hud); letter-spacing:.12em; text-transform:uppercase; color:var(--muted); margin-bottom:5px; }
+      .label span:last-child { color:var(--text); letter-spacing:.06em; }
+      .bar { height:8px; background:var(--card-3); border-radius:4px; position:relative; overflow:hidden; }
+      .bar > i { position:absolute; inset:0 auto 0 0; width:0; background:var(--green); border-radius:4px; transition:width .05s linear; }
+      .bar > b { position:absolute; top:0; bottom:0; width:2px; background:var(--amber); }
+      .bar.score > i { background:var(--red); }
+      .hearing { text-align:center; font:600 11px var(--hud); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }
+      .hearing b { color:var(--blue); }
+
+      /* buttons (same as the mission map's .btn / .btn.primary) */
+      button { font:inherit; cursor:pointer; color:inherit; }
+      .btn { width:100%; border:1px solid var(--line-2); background:var(--card-2); border-radius:10px; padding:14px;
+        font:600 14px var(--hud); letter-spacing:.12em; text-transform:uppercase; display:flex; align-items:center; justify-content:center; gap:8px; }
+      .btn.primary { background:#fff; color:#000; border-color:#fff; padding:18px; font-size:16px; }
+      .btn:active { transform:translateY(1px); }
+
+      /* join screen */
+      .pick { display:grid; gap:12px; background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px; }
+      .pick h2 { margin:0; font:700 15px var(--hud); letter-spacing:.16em; text-transform:uppercase; }
+      .pick input { font:700 24px var(--hud); padding:14px; border-radius:10px; border:1px solid var(--line-2); background:var(--card-2); color:#fff;
+        text-transform:uppercase; text-align:center; letter-spacing:.3em; }
+      .row { display:grid; grid-template-columns:repeat(3, 1fr); gap:10px; }
+      .note { font-size:12px; color:var(--dim); text-align:center; margin:0; }
+
+      /* camera (eyes) */
+      .eye { position:relative; border-radius:16px; overflow:hidden; background:#000; border:1px solid var(--line); }
       .eye video, .eye canvas { width:100%; display:block; }
       /* the box layer must be cropped exactly like the camera view, or boxes drift sideways */
       .eye canvas { position:absolute; inset:0; height:100%; object-fit:cover; }
-      .eye .tag { position:absolute; left:8px; bottom:8px; background:rgba(0,0,0,.6); padding:4px 8px; border-radius:8px; font-size:13px; }
-      .eyebig { position:absolute; top:10px; left:10px; right:10px; text-align:center; font-size:30px; font-weight:800;
-        padding:8px; border-radius:12px; background:rgba(0,0,0,.55); transition: background .15s; }
-      .eyebig.person { background:rgba(46,204,113,.9); color:#06150c; }
+      .eye .tag { position:absolute; left:10px; bottom:10px; background:rgba(0,0,0,.6); padding:4px 8px; border-radius:6px;
+        font:600 10px var(--hud); letter-spacing:.1em; text-transform:uppercase; color:var(--muted); }
+      .eyebig { position:absolute; top:10px; left:10px; padding:7px 11px; border-radius:6px; background:rgba(0,0,0,.6);
+        font:700 18px var(--hud); letter-spacing:.12em; text-transform:uppercase; color:var(--muted); transition:background .15s; }
+      .eyebig.person { background:var(--green); color:#04210f; }
+      .eye::after { content:"● REC"; position:absolute; top:12px; right:12px; font:700 10px var(--hud); letter-spacing:.14em; color:var(--red); }
       .eye img.src { width:100%; display:block; }
-      /* Eyes mode (ear.html?...&mode=eyes): full-screen camera for the "point the phone at someone" demo */
-      /* keep the level + scream bars visible (same phone listens too); only the big letter is hidden */
+      /* Eyes mode (…&mode=eyes): full-screen camera; level bars stay visible */
       body.eyes-mode #earBox { display:none !important; }
       body.eyes-mode .eye { flex:1; min-height:50vh; }
       body.eyes-mode .eye video, body.eyes-mode .eye img.src { height:100%; object-fit:cover; }
@@ -52,21 +92,26 @@
   <body>
     <!-- Join screen (only when the URL has no room/ear) -->
     <section id="join" class="pick hidden">
-      <h2 style="margin:0">Join as a GEMA ear</h2>
+      <div class="top"><span class="logo">GEMA.</span></div>
+      <h2>Join the drone</h2>
       <input id="roomInput" maxlength="4" placeholder="ROOM" autocomplete="off" />
       <div class="row">
-        <button data-ear="L">L</button><button data-ear="C">C</button><button data-ear="R">R</button>
+        <button class="btn" data-ear="L">L · ear</button><button class="btn" data-ear="C">C · cam</button><button class="btn" data-ear="R">R · ear</button>
       </div>
-      <p class="note">Or scan the QR code on the control screen.</p>
+      <p class="note">Or scan the QR code on the mission map.</p>
     </section>
 
     <!-- Ear screen -->
-    <section id="earView" class="hidden" style="display:flex;flex-direction:column;gap:14px;flex:1">
+    <section id="earView" class="hidden" style="display:flex;flex-direction:column;gap:12px;flex:1">
       <div class="top">
-        <span><span id="dot" class="dot"></span><span id="status">connecting…</span></span>
-        <span>Room <b id="room"></b></span>
+        <span class="logo">GEMA.</span>
+        <span class="chips">
+          <span class="chip"><span id="dot" class="dot"></span><span id="status">connecting…</span></span>
+          <span class="chip">Room <b id="room"></b></span>
+        </span>
       </div>
       <div id="earBox" class="ear">
+        <div id="roleLabel" class="role">Drone ear</div>
         <div id="letter" class="letter">?</div>
         <div id="sub" class="sub">Tap the button below to start listening.</div>
       </div>
@@ -79,17 +124,17 @@
           <div class="label"><span>Scream-like</span><span id="countText">0 sent</span></div>
           <div class="bar score"><i id="scoreBar"></i></div>
         </div>
-        <div class="label" style="justify-content:center"><span>Hearing: <b id="sound">–</b></span></div>
+        <div class="hearing">Hearing: <b id="sound">–</b></div>
       </div>
-      <button id="startBtn">Tap to start listening</button>
-      <button id="muffledBtn" class="ghost hidden">🔇 Muffled-voice mode: OFF</button>
+      <button id="startBtn" class="btn primary">Start listening</button>
+      <button id="muffledBtn" class="btn hidden">🔇 Muffled-voice mode: OFF</button>
       <div id="eyeBox" class="eye hidden">
         <video id="cam" playsinline muted></video>
         <canvas id="camOverlay"></canvas>
         <div id="eyeBig" class="eyebig">Looking…</div>
         <div id="eyeStatus" class="tag">Loading eyes…</div>
       </div>
-      <button id="eyeBtn" class="ghost">📷 Add eyes (camera)</button>
+      <button id="eyeBtn" class="btn">📷 Add eyes (camera)</button>
       <p class="note">Keep this screen on and the phone face-up. Nothing is recorded; only numbers are sent.</p>
     </section>
 

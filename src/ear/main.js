@@ -32,6 +32,9 @@ function runEar(room, ear) {
   $('earView').classList.remove('hidden');
   $('letter').textContent = ear;
   $('room').textContent = room;
+  $('roleLabel').textContent = { L: 'Left ear · microphone', R: 'Right ear · microphone', C: 'Camera · drone eyes' }[ear];
+  // side phones only listen; the camera button belongs to the middle (C) phone
+  if (ear !== 'C' && params.get('mode') !== 'eyes') $('eyeBtn').classList.add('hidden');
 
   const setStatus = (s) => {
     $('dot').className = `dot ${s}`;
