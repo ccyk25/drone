@@ -42,7 +42,9 @@ describe('trust-map engine', () => {
     const podOpen = sensorPod('thermal', { distanceM: 10, cover: 'open' });
     expect(podRoof).toBeLessThan(0.05);
     expect(podOpen).toBeGreaterThan(0.8);
-    expect(sensorPod('audio', { distanceM: 10, noiseDb: -50, cover: 'roof' })).toBeGreaterThan(0.5);
+    // per second, including how often people call out (30%): still far above thermal under a roof
+    expect(sensorPod('audio', { distanceM: 10, noiseDb: -50, cover: 'roof' })).toBeGreaterThan(0.15);
+    expect(sensorPod('audio', { distanceM: 10, noiseDb: -50, cover: 'roof' })).toBeGreaterThan(5 * podRoof);
     for (let t = 0; t < 30; t++) applyNegativeScan(g, cellCenter(g, roof), { thermal: {} });
     expect(trustClass(g, roof)).not.toBe('cleared');
     for (let t = 0; t < 30; t++) applyNegativeScan(g, cellCenter(g, open), { thermal: {} });

@@ -56,7 +56,7 @@ export function sensorPod(sensor, { distanceM, noiseDb, cover = 'open', hotDay =
   const s = config.sensors[sensor];
   if (!s) return 0;
   const coverF = s.cover[cover] ?? 1;
-  if (sensor === 'audio') return podFor(distanceM, noiseDb, config) * coverF;
+  if (sensor === 'audio') return podFor(distanceM, noiseDb, config) * coverF * (s.callProb ?? 1);
   if (distanceM > s.radiusM) return 0;
   const heat = sensor === 'thermal' && hotDay ? s.hotDayFactor : 1;
   return s.max * coverF * heat;

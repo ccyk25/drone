@@ -38,7 +38,9 @@ export const CONFIG = {
   // wash people out). Microphones hear through gaps. Camera (general model) is weak from drone height.
   // These are modelling assumptions for the demo, stated openly; the audio curve comes from the hearing lab.
   sensors: {
-    audio: { cover: { open: 1.0, trees: 0.9, roof: 0.75, water: 0.7 } },
+    // callProb: survivors call out ~30% of seconds, so one second of silence only rules out that much.
+    // (Without it, five drones 'cleared' everything in seconds while people were still missing.)
+    audio: { callProb: 0.3, cover: { open: 1.0, trees: 0.9, roof: 0.75, water: 0.7 } },
     thermal: { radiusM: 60, max: 0.85, hotDayFactor: 0.5,
       cover: { open: 1.0, trees: 0.35, roof: 0.03, water: 0.1 } },
     camera: { radiusM: 40, max: 0.3,

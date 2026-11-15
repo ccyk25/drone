@@ -637,8 +637,8 @@ S.applyNegativeScan(grid, droneXY, {
 |---|---|---|
 | Thermal drone, standard grid | **74%** | 105 s |
 | Ears + thermal, standard grid | **99%** | 51 s |
-| **GEMA: ears + thermal, trust-map guided** | **99.9%** | **31 s** (3× faster than thermal alone) |
+| **GEMA: ears + thermal, trust-map guided** | **100%** | **26 s** (4× faster than thermal alone) |
 
 - **Thermal alone:** 100% of the survivors it missed were in areas it **flew over**, so a naive map would call them "searched." **GEMA's trust map flagged 94% of those as NOT CLEARED.**
 - **Honest framing:** these are *model* results. They depend on our stated assumptions (where survivors are, how often they call, sensor PODs), not on field data. The audio side matches the hearing lab; the thermal blind spots match published limits.
-- **Slide line:** *"Adding ears finds 99% instead of 74%. Guiding by the trust map finds the first survivor 3× faster. And when it misses someone, it tells you where."*
+- **Slide line:** *"Adding ears finds 99% instead of 74%. Guiding by the trust map finds the first survivor 4× faster. And when it misses someone, it tells you where."*

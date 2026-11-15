@@ -106,10 +106,13 @@ let CONFIG = withScenario(scenarioId, site);
 const ALTITUDE_M = 60;   // simulated flight altitude, display only
 
 // ---- the swarm: 5 drones share one probability map, each searches its own operating area ----
+// Fleet mode: 'single' (default, for the live demo) or 'swarm' (5 drones). Toggle on the map or ?fleet=swarm.
+let fleetMode = new URLSearchParams(location.search).get('fleet') === 'swarm' ? 'swarm' : 'single';
 const SWARM = [
   { id: 'D1', color: '#5fd0ff' }, { id: 'D2', color: '#ff7ad9' }, { id: 'D3', color: '#ffd84a' },
   { id: 'D4', color: '#a98bff' }, { id: 'D5', color: '#ff8a3d' },
 ];
+const FLEET = () => (fleetMode === 'swarm' ? SWARM : SWARM.slice(0, 1));
 
 // =============================================================================================
 // MOCKS: tiny stand-ins, same interfaces as HANDOVER §8.3. Delete once the real modules land.
@@ -291,9 +294,9 @@ function waypointFor(d) {
 
 // Default areas: the mission area split into one strip per drone along its longer side.
 function defaultAreas() {
-  const { cols, rows, cellMeters: cell } = CONFIG.grid, K = SWARM.length;
+  const { cols, rows, cellMeters: cell } = CONFIG.grid, K = FLEET().length;
   const W = cols * cell, H = rows * cell, byCol = cols >= rows, n = byCol ? cols : rows;
-  return SWARM.map((_, k) => {
+  return FLEET().map((_, k) => {
     const a = Math.floor((k * n) / K), b = Math.floor(((k + 1) * n) / K);
     if (b <= a) return makeArea({ x0: -W / 2, y0: -H / 2, x1: W / 2, y1: H / 2 });   // tiny mission: share it
     return byCol ? makeArea({ x0: -W / 2 + a * cell, x1: -W / 2 + b * cell, y0: -H / 2, y1: H / 2 })
@@ -408,8 +411,8 @@ function reset() {
   mission = { x0: -W / 2, y0: -H / 2, x1: W / 2, y1: H / 2 };
   basePad = { x: 0, y: -H / 2 - CONFIG.grid.cellMeters };             // launch & landing pad, just south of the mission
   const areas = defaultAreas();
-  fleet = SWARM.map((s, k) => {
-    const slot = { x: basePad.x + (k - (SWARM.length - 1) / 2) * 16, y: basePad.y };
+  fleet = FLEET().map((s, k) => {
+    const slot = { x: basePad.x + (k - (FLEET().length - 1) / 2) * 16, y: basePad.y };
     return { ...s, slot, drone: createDrone(CONFIG, { ...slot, headingDeg: 0 }), area: areas[k], current: null, recent: [],
       status: 'active', speedKmh: 0, lastPos: null };
   });
@@ -683,6 +686,34 @@ window.addEventListener('keydown', (ev) => {
   if (off === undefined || ev.target?.tagName === 'INPUT') return;
   handleDetection({ type: 'detection', sensor: 'camera', t: Date.now(), relBearingDeg: off * (CONFIG.camera?.halfFovDeg ?? 30), confidence: 0.9, ears: ['C'], source: 'sim-camera' });
 });
+
+// ---- Single / Swarm toggle (single by default for the live demo) ----
+{
+  const act = document.querySelector('.swarm-act');
+  const seg = document.createElement('div');
+  seg.className = 'fleet-seg';
+  seg.style.cssText = 'display:flex;gap:4px;margin-right:6px;padding-right:8px;border-right:1px solid var(--line)';
+  seg.innerHTML = '<button class="btn sm toggle" data-fleet="single" title="One drone (live demo with the phones)">Single</button>' +
+                  '<button class="btn sm toggle" data-fleet="swarm" title="Five drones sharing one probability map">Swarm · 5</button>';
+  act?.prepend(seg);
+  const paint = () => {
+    seg.querySelectorAll('[data-fleet]').forEach(b => b.classList.toggle('on', b.dataset.fleet === fleetMode));
+    const all = document.querySelector('[data-act="d-all"]'); if (all) all.style.display = fleetMode === 'swarm' ? '' : 'none';
+    document.body.classList.toggle('fleet-single', fleetMode === 'single');
+  };
+  seg.addEventListener('click', (ev) => {
+    const m = ev.target.closest('[data-fleet]')?.dataset.fleet;
+    if (!m || m === fleetMode) return;
+    if (responder.busy()) { ui.log('Finish the current rescue response before switching fleet mode', 'warn'); return; }
+    fleetMode = m;
+    const q = new URLSearchParams(location.search); q.set('fleet', m); history.replaceState(null, '', `${location.pathname}?${q}${location.hash}`);
+    respD = null; selId = SWARM[0].id;
+    reset(); paint(); pushSwarmUi();
+    ui.log(m === 'swarm' ? 'Swarm mode: 5 search drones share one probability map' : 'Single-drone mode: D1 searches the whole area', 'area');
+  });
+  window.__paintFleet = paint;
+  paint();
+}
 
 // ---- Connect the drone (setup sheet) + Drone camera window (P1) ----
 const connect = createConnect({

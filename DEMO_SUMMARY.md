@@ -35,7 +35,7 @@ After a flood or collapse, drone teams search blind. Thermal cameras can't see u
 | Calibration, muffled-voice mode, simulate buttons | Built |
 | **Trust map engine** (built) | Every sensor has its own detection probability by distance, noise and cover (roof/open/trees/water); silence in noise or under roofs stays NOT CLEARED |
 | **Thermal (simulated)** | Modelled with its real blind spots: roofs, water, hot afternoons |
-| **Simulation evidence** (`/lab.html`) | 200 runs per strategy: thermal drone **74%** found → ears + thermal **99%** → GEMA guided **99.9%**, first survivor **3× faster** (31 s vs 105 s). Thermal alone: all its misses were in areas it flew over; the trust map flagged **94%** of them NOT CLEARED |
+| **Simulation evidence** (`/lab.html`) | 200 runs per strategy: thermal drone **74%** found → ears + thermal **99%** → GEMA guided **100%**, first survivor **4× faster** (26 s vs 105 s). Thermal alone: all its misses were in areas it flew over; the trust map flagged **94%** of them NOT CLEARED |
 | Code quality | **42 unit tests** pass |
 
 ## Honest limits (say these, because judges reward honesty)
@@ -65,7 +65,7 @@ After a flood or collapse, drone teams search blind. Thermal cameras can't see u
 | 0:40 | **Insight:** "No detection is not the same as clear." Show the sensor table (thermal vs mic) |
 | 1:10 | **Live demo:** (1) a judge screams near the left phone and the drone turns left; (2) play the flood recording: no false alarm, and cells stay amber; (3) a muffled "help" under a box is heard; (4) the camera confirms a person; (5) **"Reveal ground truth"**: the missed survivor sits in an amber cell |
 | 3:10 | **How it works:** learned background plus pitch, the trust map, and the hearing lab results (16/16) |
-| 3:50 | **Evidence:** simulation: 74% → 99% found, first find 3× faster, and misses flagged as NOT CLEARED; then the stakeholders (Bomba, APM, NADMA, families) |
+| 3:50 | **Evidence:** simulation: 74% → 99% found, first find 4× faster, and misses flagged as NOT CLEARED; then the stakeholders (Bomba, APM, NADMA, families) |
 | 4:30 | **Close:** "We built the brain. Fraunhofer built the ears. Bomba has the drones." |
 
 ## Pages

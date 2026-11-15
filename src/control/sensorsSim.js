@@ -39,13 +39,13 @@ export function simulateThermal(grid, droneXY, survivors, { hotDay = false, dtS 
 }
 
 /** Survivors calling out, heard by the drone's ears: [{ sensor:'audio', id, absBearingDeg, confidence, distanceM }] */
-export function simulateCallouts(grid, droneXY, survivors, { noiseDb, callProb = 0.3, bearingErrDeg = 12, dtS = 1, rng = Math.random } = {}, config = CONFIG) {
+export function simulateCallouts(grid, droneXY, survivors, { noiseDb, bearingErrDeg = 12, dtS = 1, rng = Math.random } = {}, config = CONFIG) {
   const out = [];
   for (const s of survivors) {
     if (s.found) continue;
     const i = cellAt(grid, s.x, s.y);
     const d = dist(droneXY, s);
-    const pod1 = callProb * sensorPod('audio', { distanceM: d, noiseDb, cover: grid.cover[i] ?? 'open' }, config);
+    const pod1 = sensorPod('audio', { distanceM: d, noiseDb, cover: grid.cover[i] ?? 'open' }, config);   // includes the call probability
     if (pod1 > 0 && rng() < 1 - (1 - pod1) ** dtS) {
       out.push({ sensor: 'audio', id: s.id, absBearingDeg: (bearingTo(droneXY, s) + bearingErrDeg * gauss(rng) + 360) % 360, confidence: 0.8, distanceM: d });
     }
