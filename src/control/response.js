@@ -40,6 +40,12 @@ export function createResponder(env) {
     'backdrop-filter:blur(8px);box-shadow:0 8px 24px rgba(0,0,0,.4);pointer-events:none;max-width:min(560px,92vw);text-align:center;' +
     'font:700 14px var(--hud,monospace);letter-spacing:.12em;text-transform:uppercase;color:var(--text,#eef1f4);transition:border-color .2s,color .2s';
   (env.hud || document.body).appendChild(banner);
+  // sit just below the drone bar (swarm list) so it never covers it
+  const placeBanner = () => {
+    const r = document.querySelector('section.swarm')?.getBoundingClientRect();
+    if (r && r.height) banner.style.top = `${Math.round(r.bottom + 10)}px`;
+  };
+  setInterval(placeBanner, 1000); setTimeout(placeBanner, 300);
   const PHASES = {
     search: ['🔍 Searching', 'var(--muted,#8a929c)'],
     track: ['📷 Person in view · approaching', 'var(--green,#3be07c)'],

@@ -292,16 +292,33 @@ function waypointFor(d) {
   return { i: best, ...a.centers[best], p: p[best] };
 }
 
-// Default areas: the mission area split into one strip per drone along its longer side.
+// Default areas: the selected mission area is tiled into compact, near-square sectors, one per drone
+// (e.g. 5 drones on a wide area → 3 sectors on top, 2 below), snapped to whole cells so every sector
+// stays inside the area the operator drew and no two sectors overlap. Single mode: one drone, whole area.
 function defaultAreas() {
   const { cols, rows, cellMeters: cell } = CONFIG.grid, K = FLEET().length;
-  const W = cols * cell, H = rows * cell, byCol = cols >= rows, n = byCol ? cols : rows;
-  return FLEET().map((_, k) => {
-    const a = Math.floor((k * n) / K), b = Math.floor(((k + 1) * n) / K);
-    if (b <= a) return makeArea({ x0: -W / 2, y0: -H / 2, x1: W / 2, y1: H / 2 });   // tiny mission: share it
-    return byCol ? makeArea({ x0: -W / 2 + a * cell, x1: -W / 2 + b * cell, y0: -H / 2, y1: H / 2 })
-      : makeArea({ x0: -W / 2, x1: W / 2, y1: H / 2 - a * cell, y0: H / 2 - b * cell });
-  });
+  const W = cols * cell, H = rows * cell;
+  if (K === 1) return [makeArea({ x0: -W / 2, y0: -H / 2, x1: W / 2, y1: H / 2 })];
+  // pick the number of sector rows that makes sectors closest to square (each sector ≥ 2×2 cells if possible)
+  let best = null;
+  for (let r = 1; r <= Math.min(K, rows); r++) {
+    const per = Array.from({ length: r }, (_, i) => Math.floor(K / r) + (i < K % r ? 1 : 0));
+    const th = H / r;
+    const worst = Math.max(...per.map(c => { const tw = W / c; return Math.max(tw / th, th / tw); }));
+    const fits = per.every(c => cols / c >= 2) && rows / r >= 2;
+    const score = worst + (fits ? 0 : 100);
+    if (!best || score < best.score) best = { r, per, score };
+  }
+  const areas = [];
+  const rowCut = i => Math.round((i * rows) / best.r);            // sector rows, in cells, top → bottom
+  for (let i = 0; i < best.r; i++) {
+    const ya = rowCut(i), yb = rowCut(i + 1), c = best.per[i];
+    for (let j = 0; j < c; j++) {
+      const xa = Math.round((j * cols) / c), xb = Math.round(((j + 1) * cols) / c);
+      areas.push(makeArea({ x0: -W / 2 + xa * cell, x1: -W / 2 + xb * cell, y1: H / 2 - ya * cell, y0: H / 2 - yb * cell }));
+    }
+  }
+  return areas;
 }
 
 // =============================================================================================

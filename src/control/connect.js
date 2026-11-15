@@ -118,6 +118,10 @@ export function createConnect({ room, earUrl, onCalibrate, onClose } = {}) {
     }
     sc.textContent = new Date().toLocaleTimeString([], { hour12: false });
   }
+  setInterval(() => {                                          // stay below the drone bar and the phase banner
+    const r = document.querySelector('section.swarm')?.getBoundingClientRect();
+    if (r && r.height) pip.style.top = `${Math.round(r.bottom + 72)}px`;
+  }, 1000);
   setInterval(() => {
     if (lastFrameAt && Date.now() - lastFrameAt > 3000) { pip.classList.add('stale'); lbl.textContent = 'Camera offline'; lbl.classList.remove('person'); box.style.display = 'none'; }
   }, 1000);

@@ -168,7 +168,7 @@ export function createMap(elId, config) {
     const css = getComputedStyle(document.documentElement);
     const px = name => parseFloat(css.getPropertyValue(name)) || 0;
     const wide = window.innerWidth > 900;
-    const rail = $px('.rail'), feed = $px('.feed'), dock = $px('.dock'), swarm = $px('.swarm');
+    const rail = $px('.rail'), feed = $px('.feed'), dock = $px('.dock'), swarm = $px('section.swarm');
     function $px(sel) { const n = document.querySelector(sel); return n ? n.getBoundingClientRect() : null; }
     const top = Math.max(px('--top') + 16 + (!wide && feed ? feed.height + 8 : 0), swarm && swarm.height ? swarm.bottom + 16 : 0);
     const left = wide && rail ? rail.right + 16 : 16;
