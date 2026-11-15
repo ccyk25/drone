@@ -103,6 +103,12 @@ const withScenario = (id, st) => {
 let CONFIG = withScenario(scenarioId, site);
 const ALTITUDE_M = 60;   // simulated flight altitude, display only
 
+// ---- the swarm: 5 drones share one probability map, each searches its own operating area ----
+const SWARM = [
+  { id: 'D1', color: '#5fd0ff' }, { id: 'D2', color: '#ff7ad9' }, { id: 'D3', color: '#ffd84a' },
+  { id: 'D4', color: '#a98bff' }, { id: 'D5', color: '#ff8a3d' },
+];
+
 // =============================================================================================
 // MOCKS: tiny stand-ins, same interfaces as HANDOVER §8.3. Delete once the real modules land.
 // =============================================================================================
@@ -230,34 +236,67 @@ const scenarioList = (!MOCKS && (realScenario?.SURVIVORS || realScenario?.defaul
 
 // ---- small adapters (tolerate slightly different return shapes from search.js) ----
 const toXY = v => Array.isArray(v) ? { x: v[0], y: v[1] } : { x: v.x, y: v.y };
-let N = CONFIG.grid.cols * CONFIG.grid.rows;
-let grid;
-const center = i => toXY(S.cellCenter(grid, i));
-function probs() {
-  const g = grid;
-  const arr = g.p || g.probs || g.prob || (g.cells && g.cells.map(c => c.p));
-  return arr ? Array.from(arr) : new Array(N).fill(1 / N);
+// ---- one search grid per drone ----
+// Each drone owns its own engine grid (its operating area), which can sit anywhere on the map.
+// Local frame: (0,0) = centre of the mission area. Engine grids use their own origin, so each area keeps
+// an offset: local = engine + off.
+const MAX_CELLS_SIDE = 40;
+const DEFAULT_BOX_M = 250;     // a plain click (no drag) drops a square this size
+function makeArea(b) {          // b = { x0, y0, x1, y1 } in local metres
+  const wM = b.x1 - b.x0, hM = b.y1 - b.y0, base = BASE_CONFIG.grid.cellMeters;
+  const cell = Math.max(base, Math.ceil(Math.max(wM, hM) / MAX_CELLS_SIDE / 10) * 10);
+  const cols = Math.max(2, Math.round(wM / cell)), rows = Math.max(2, Math.round(hM / cell));
+  const cfg = { ...CONFIG, grid: { ...CONFIG.grid, cols, rows, cellMeters: cell } };
+  const grid = S.createGrid(cfg), n = cols * rows;
+  const ec = Array.from({ length: n }, (_, i) => toXY(S.cellCenter(grid, i)));
+  const mx = ec.reduce((a, c) => a + c.x, 0) / n, my = ec.reduce((a, c) => a + c.y, 0) / n;
+  const cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2, off = { x: cx - mx, y: cy - my };
+  return {
+    cfg, grid, n, cell, off, centers: ec.map(c => ({ x: c.x + off.x, y: c.y + off.y })),
+    bounds: { x0: cx - (cols * cell) / 2, x1: cx + (cols * cell) / 2, y0: cy - (rows * cell) / 2, y1: cy + (rows * cell) / 2 },
+  };
 }
-const recent = [];          // last few cells visited, so the drone can't park on one cell forever
-function waypointXY(xy) {
-  const raw = S.nextWaypoint(grid, xy);
-  let w = typeof raw === 'number' ? { i: raw, ...center(raw) }
-    : raw && typeof raw.i === 'number' ? { i: raw.i, ...center(raw.i) }
-    : raw ? { i: -1, ...toXY(raw) } : null;
-  // planner picked where we already are (or just were): take the best other cell instead
-  if (!w || Math.hypot(w.x - xy.x, w.y - xy.y) < 10 || recent.includes(w.i)) {
-    const p = probs();
+const toEngine = (a, xy) => ({ x: xy.x - a.off.x, y: xy.y - a.off.y });
+function probsOf(a) {
+  const g = a.grid, arr = g.p || g.probs || g.prob || (g.cells && g.cells.map(c => c.p));
+  return arr ? Array.from(arr) : new Array(a.n).fill(1 / a.n);
+}
+const trustOf = a => Array.from({ length: a.n }, (_, i) => S.trustClass(a.grid, i, a.cfg));
+// what one drone hears (or doesn't) counts for every grid it is near, so overlapping areas stay in sync
+function scanAll(xy, noiseDb) { for (const d of fleet) S.applyNegativeScan(d.area.grid, toEngine(d.area, xy), noiseDb, d.area.cfg); }
+function detectAll(xy, absDeg, conf) { for (const d of fleet) S.applyDetection(d.area.grid, toEngine(d.area, xy), absDeg, conf, d.area.cfg); }
+
+// Next waypoint for one drone: the most promising cell of ITS OWN area (probability discounted by distance),
+// skipping cells it just visited. Same scoring as the engine's nextWaypoint, limited to the drone's area.
+function waypointFor(d) {
+  const a = d.area, p = probsOf(a), xy = d.drone.state;
+  const pickFrom = strict => {
     let best = -1, bs = -1;
-    for (let i = 0; i < N; i++) {
-      const c = center(i), d = Math.hypot(c.x - xy.x, c.y - xy.y);
-      if (d < 10 || recent.includes(i)) continue;
-      const s = p[i] / (1 + d / 300);
+    for (let i = 0; i < a.n; i++) {
+      const c = a.centers[i], dist = Math.hypot(c.x - xy.x, c.y - xy.y);
+      if (dist < 10 || (strict && d.recent.includes(i))) continue;
+      const s = p[i] / (1 + dist / 300);
       if (s > bs) { bs = s; best = i; }
     }
-    if (best >= 0) w = { i: best, ...center(best) };
-  }
-  if (w && w.i >= 0) { recent.push(w.i); if (recent.length > 4) recent.shift(); }
-  return w;
+    return best;
+  };
+  let best = pickFrom(true);
+  if (best < 0) best = pickFrom(false);
+  if (best < 0) return null;
+  d.recent.push(best); if (d.recent.length > 4) d.recent.shift();
+  return { i: best, ...a.centers[best], p: p[best] };
+}
+
+// Default areas: the mission area split into one strip per drone along its longer side.
+function defaultAreas() {
+  const { cols, rows, cellMeters: cell } = CONFIG.grid, K = SWARM.length;
+  const W = cols * cell, H = rows * cell, byCol = cols >= rows, n = byCol ? cols : rows;
+  return SWARM.map((_, k) => {
+    const a = Math.floor((k * n) / K), b = Math.floor(((k + 1) * n) / K);
+    if (b <= a) return makeArea({ x0: -W / 2, y0: -H / 2, x1: W / 2, y1: H / 2 });   // tiny mission: share it
+    return byCol ? makeArea({ x0: -W / 2 + a * cell, x1: -W / 2 + b * cell, y0: -H / 2, y1: H / 2 })
+      : makeArea({ x0: -W / 2, x1: W / 2, y1: H / 2 - a * cell, y0: H / 2 - b * cell });
+  });
 }
 
 // =============================================================================================
@@ -277,7 +316,7 @@ const ui = createUI(document.getElementById('hud'), {
     onStart: () => { running = !running; ui.setStarted(running); if (running && t0Sim == null) t0Sim = simMs; ui.log(running ? 'Search started' : 'Paused'); },
     onReset: () => reset(),
     onSimScream: ear => {
-      ui.log(`Simulated scream on <b>${ear}</b>`, 'sim');
+      ui.log(`Simulated scream on <b>${sel().id}</b> ear <b>${ear}</b>`, 'sim');
       handleDetection({ type: 'detection', t: Date.now(), relBearingDeg: CONFIG.ears[ear] ?? 0, confidence: ear === 'C' ? 0.7 : 0.8, ears: [ear], source: 'sim' });
     },
     onRotor: on => {
@@ -305,17 +344,39 @@ const ui = createUI(document.getElementById('hud'), {
     },
     onTab: tab => setTab(tab),
     onSelectArea: on => {
-      if (!on) { cancelSelect?.(); cancelSelect = null; return; }
+      cancelSelect?.(); cancelSelect = null;
+      if (!on) return;
       if (familyMode) { familyMode = false; ui.setFamilyMode(false); }
-      ui.log('Drag a rectangle on the map to set the search area', 'warn');
+      ui.log('Drag a rectangle on the map to set the search area (resets all drone areas)', 'warn');
       cancelSelect = view.startAreaSelect(bounds => { cancelSelect = null; ui.setSelecting(false); setSearchArea(bounds); });
     },
+    // ---- swarm ----
+    onSelectDrone: id => selectDrone(id),
+    onDroneArea: on => {
+      cancelSelect?.(); cancelSelect = null; placeQueue = [];
+      if (!on) return;
+      if (familyMode) { familyMode = false; ui.setFamilyMode(false); }
+      askArea(sel());
+    },
+    onPlaceAll: () => {
+      cancelSelect?.(); cancelSelect = null;
+      if (familyMode) { familyMode = false; ui.setFamilyMode(false); }
+      placeQueue = fleet.map(d => d.id);
+      ui.log('Place all 5: click (or drag a box) where each drone should search, D1 → D5. Esc to stop.', 'warn');
+      nextPlacement();
+    },
+    onDroneHold: () => toggleHold(sel()),
+    onDroneLand: () => toggleLand(sel()),
   },
 });
 
 let running = false, rotorOn = false, reveal = false, familyMode = false, speed = 2;
 let simMs = 0, t0Sim = null, firstDetMs = null, scanAcc = 0, callAcc = 0, lastDetAt = -1e9;
-let drone, survivors = [], current = null, cancelSelect = null;
+let survivors = [], cancelSelect = null, placeQueue = [], mission = null, basePad = null;
+// each drone: { id, color, drone, slot (landing spot), area (its own grid), current, recent, status, speedKmh, lastPos }
+// status: 'active' (searching / investigating) · 'hold' (hovering, still listening) · 'rtb' (returning to land) · 'landed'
+let fleet = [], selId = SWARM[0].id;
+const sel = () => fleet.find(d => d.id === selId) || fleet[0];
 const ears = {}; // ear → { db, floorDb, last, screamUntil }
 
 function applySite() {
@@ -324,8 +385,7 @@ function applySite() {
   ui.setSite(site);
 }
 
-// Operator-drawn search area -> grid size, cell size and centre.
-const MAX_CELLS_SIDE = 40;
+// Operator-drawn mission area -> grid size, cell size and centre (then split into 5 drone areas).
 function setSearchArea(bounds) {
   const c = bounds.getCenter();
   const k = 111320 * Math.cos(c.lat * Math.PI / 180);
@@ -341,31 +401,113 @@ function setSearchArea(bounds) {
 }
 
 function reset() {
-  N = CONFIG.grid.cols * CONFIG.grid.rows;
-  grid = S.createGrid(CONFIG);
-  // put the grid's centre on CONFIG.map.center, whatever origin search.js uses
-  const cs = Array.from({ length: N }, (_, i) => center(i));
-  const mx = cs.reduce((a, c) => a + c.x, 0) / N, my = cs.reduce((a, c) => a + c.y, 0) / N;
-  const [lat0, lng0] = CONFIG.map.center;
-  setOrigin([lat0 - my / 111320, lng0 - mx / (111320 * Math.cos(lat0 * Math.PI / 180))]);
-  const bounds = view.buildGrid(cs, CONFIG.grid.cellMeters);
-  view.fitToHud(bounds);
-  const minY = Math.min(...cs.map(c => c.y));
-  drone = createDrone(CONFIG, { x: mx, y: minY - CONFIG.grid.cellMeters, headingDeg: 0 });
-  current = null; recent.length = 0;
+  setOrigin(CONFIG.map.center);                                       // local (0,0) = centre of the mission area
   const W = CONFIG.grid.cols * CONFIG.grid.cellMeters, H = CONFIG.grid.rows * CONFIG.grid.cellMeters;
+  mission = { x0: -W / 2, y0: -H / 2, x1: W / 2, y1: H / 2 };
+  basePad = { x: 0, y: -H / 2 - CONFIG.grid.cellMeters };             // launch & landing pad, just south of the mission
+  const areas = defaultAreas();
+  fleet = SWARM.map((s, k) => {
+    const slot = { x: basePad.x + (k - (SWARM.length - 1) / 2) * 16, y: basePad.y };
+    return { ...s, slot, drone: createDrone(CONFIG, { ...slot, headingDeg: 0 }), area: areas[k], current: null, recent: [],
+      status: 'active', speedKmh: 0, lastPos: null };
+  });
+  view.setFleet(fleet.map(({ id, color }) => ({ id, color })));
+  view.setBase(basePad);
+  resetLifter();
+  view.setMission(mission);
+  rebuildGrids();
+  view.fitToHud(view.boundsOf(mission));
   survivors = (scenarioList || SCENARIOS[scenarioId].survivors).map((s, k) => {
-    const xy = s.lat != null ? latLngToXY([s.lat, s.lng]) : s.fx != null ? { x: mx + s.fx * W, y: my + s.fy * H }
-      : s.dx != null ? { x: mx + s.dx, y: my + s.dy } : { x: s.x, y: s.y };
-    return { id: s.id || `s${k + 1}`, label: s.label || s.name || `Survivor ${k + 1}`, ...xy, found: false };
+    const xy = s.lat != null ? latLngToXY([s.lat, s.lng]) : s.fx != null ? { x: s.fx * W, y: s.fy * H }
+      : s.dx != null ? { x: s.dx, y: s.dy } : { x: s.x, y: s.y };
+    return { id: s.id || `s${k + 1}`, label: s.label || s.name || `Survivor ${k + 1}`, ...xy, found: false, rescued: false };
   });
   simMs = 0; t0Sim = null; firstDetMs = null; scanAcc = 0; callAcc = 0; lastDetAt = -1e9;
+  findQueue = []; lastFoundAt = -1e9;
   running = false; ui.setStarted(false);
   view.resetTrail();
   view.updateSurvivors(survivors, reveal);
-  redrawGrid(); redrawDrone();
+  redrawGrid(); redrawDrones();
   ui.setArea({ cols: CONFIG.grid.cols, rows: CONFIG.grid.rows, cellM: CONFIG.grid.cellMeters });
-  ui.log(`Grid ${CONFIG.grid.cols}×${CONFIG.grid.rows} ready · room ${ROOM} · ${MOCKS ? 'MOCK engine' : 'live engine'}`);
+  ui.log(`Mission ${CONFIG.grid.cols}×${CONFIG.grid.rows} cells · ${fleet.length} search drones + rescue drone R1 · room ${ROOM} · ${MOCKS ? 'MOCK engine' : 'live engine'}`);
+}
+
+// ---- swarm controls ----
+function rebuildGrids() {
+  view.buildGrids(fleet.map(d => ({ key: d.id, color: d.color, centers: d.area.centers, cellMeters: d.area.cell })));
+  drawSectors();
+}
+function drawSectors() { view.setSectors(fleet.map(d => ({ id: d.id, color: d.color, ...d.area.bounds })), selId); }
+
+function selectDrone(id) {
+  if (!fleet.some(d => d.id === id)) return;
+  selId = id;
+  drawSectors(); redrawDrones(); pushSwarmUi();
+}
+
+function askArea(d) {
+  ui.setDroneSelecting(true);
+  ui.log(`<b>${d.id}</b>: click the map for a ${DEFAULT_BOX_M} m square, or drag a box of any size`, 'warn');
+  cancelSelect = view.startAreaSelect(bounds => {
+    cancelSelect = null; ui.setDroneSelecting(false);
+    setDroneArea(d, bounds);
+    nextPlacement();
+  });
+}
+// "Place all 5": select each drone in turn and ask for its box
+function nextPlacement() {
+  const id = placeQueue.shift();
+  if (!id) return;
+  selectDrone(id);
+  askArea(sel());
+}
+
+// operator clicks / drags a box anywhere: that drone gets its own new grid there
+function setDroneArea(d, bounds) {
+  const sw = latLngToXY(bounds.getSouthWest()), ne = latLngToXY(bounds.getNorthEast());
+  let b = { x0: sw.x, y0: sw.y, x1: ne.x, y1: ne.y };
+  if (b.x1 - b.x0 < 40 && b.y1 - b.y0 < 40) {                       // a click, not a drag: square centred on it
+    const cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2, h = DEFAULT_BOX_M / 2;
+    b = { x0: cx - h, y0: cy - h, x1: cx + h, y1: cy + h };
+  }
+  d.area = makeArea(b);
+  d.recent.length = 0;
+  if (d.status === 'active' && d.drone.state.mode !== 'investigate') { d.current = null; d.drone.setTarget(null); }
+  rebuildGrids(); redrawGrid();
+  const { cols, rows, cellMeters } = d.area.cfg.grid;
+  ui.log(`<b>${d.id}</b> area set: ${cols * cellMeters} × ${rows * cellMeters} m (${cols * rows} cells)`, 'area');
+}
+
+function toggleHold(d) {
+  if (d.status === 'landed' || d.status === 'rtb') return ui.log(`<b>${d.id}</b> is landing: launch it first`, 'warn');
+  if (d.status === 'hold') { d.status = 'active'; d.current = null; ui.log(`<b>${d.id}</b> resumed searching`); }
+  else { d.status = 'hold'; d.current = null; d.drone.setTarget(null); ui.log(`<b>${d.id}</b> holding position · still listening`, 'warn'); }
+  pushSwarmUi(); redrawDrones();
+}
+
+function toggleLand(d) {
+  if (d.status === 'landed' || d.status === 'rtb') {
+    d.status = 'active'; d.current = null; d.drone.setTarget(null);
+    ui.log(`<b>${d.id}</b> launched · back to its area`);
+  } else {
+    d.status = 'rtb'; d.current = null; d.drone.setTarget(d.slot, 'rtb');
+    ui.log(`<b>${d.id}</b> returning to base to land`, 'warn');
+    if (!running) ui.log('Press Start search to fly it home', 'muted');
+  }
+  pushSwarmUi(); redrawDrones();
+}
+
+function statusText(d) {
+  if (d.status === 'landed') return 'Landed';
+  if (d.status === 'rtb') return 'Returning';
+  if (d.status === 'hold') return 'Holding';
+  return d.drone.state.mode === 'investigate' ? 'Investigating' : running ? 'Searching' : 'Ready';
+}
+function pushSwarmUi() {
+  const s = sel();
+  ui.setSwarm(fleet.map(d => ({
+    id: d.id, color: d.color, status: d.status, label: statusText(d), clearedPct: d.clearedPct || 0,
+  })), selId, { hold: s.status === 'hold', grounded: s.status === 'landed' || s.status === 'rtb' }, lifterUi());
 }
 
 // ---- noise floor the engine should assume ----
@@ -377,45 +519,128 @@ function currentNoiseDb() {
 }
 
 // ---- detections ----
-function handleDetection(det) {
+// det comes from drone d (default: the selected drone, which carries the phone ears / sim buttons)
+function handleDetection(det, d = sel()) {
+  if (d.status === 'landed' || d.status === 'rtb') { ui.log(`<b>${d.id}</b> is on the ground: select a flying drone to listen`, 'warn'); return; }
+  const drone = d.drone;
   const xy = { x: drone.state.x, y: drone.state.y };
   const abs = wrapDeg(drone.state.headingDeg + det.relBearingDeg);
-  S.applyDetection(grid, xy, abs, det.confidence, CONFIG);
+  detectAll(xy, abs, det.confidence);
   const R = CONFIG.pod.hearingRadiusM, r = abs * Math.PI / 180;
   const pinXY = { x: xy.x + Math.sin(r) * R * EST_RANGE_FRAC, y: xy.y + Math.cos(r) * R * EST_RANGE_FRAC };
-  view.addPin(pinXY, det.confidence, det.source === 'sim' ? 'Simulated scream' : `Scream (${(det.ears || []).join('+')})`);
+  view.addPin(pinXY, det.confidence, `${d.id} · ${det.source === 'sim' ? 'Simulated scream' : `Scream (${(det.ears || []).join('+')})`}`);
   view.showBearing(xy, abs, R);
   if (firstDetMs == null && t0Sim != null) firstDetMs = simMs - t0Sim;
-  ui.log(`🔴 Detection · bearing ${det.relBearingDeg >= 0 ? '+' : ''}${det.relBearingDeg.toFixed(0)}° rel (${abs.toFixed(0)}° abs) · conf ${(det.confidence * 100).toFixed(0)}%`, 'det');
+  ui.log(`🔴 <b>${d.id}</b> detection · bearing ${det.relBearingDeg >= 0 ? '+' : ''}${det.relBearingDeg.toFixed(0)}° rel (${abs.toFixed(0)}° abs) · conf ${(det.confidence * 100).toFixed(0)}%`, 'det');
   // mark survivors found by a pin landing near them (simulated button screams aren't a real voice, so they never "find" anyone)
   if (det.source !== 'sim')
-    for (const s of survivors) if (!s.found && Math.hypot(s.x - pinXY.x, s.y - pinXY.y) <= FOUND_PIN_M) markFound(s, 'pin');
+    for (const s of survivors) if (!s.found && Math.hypot(s.x - pinXY.x, s.y - pinXY.y) <= FOUND_PIN_M) markFound(s, 'pin', d);
   // turn and investigate along the bearing
-  current = { i: -1, ...pinXY };
+  d.status = 'active';
+  d.current = { i: -1, ...pinXY };
   drone.setTarget(pinXY, 'investigate');
-  if (simMs - lastDetAt > PIN_MERGE_MS) view.flash(pinXY);
+  if (d.id === selId && simMs - lastDetAt > PIN_MERGE_MS) view.flash(pinXY);
   lastDetAt = simMs;
   if (!running) { running = true; ui.setStarted(true); if (t0Sim == null) t0Sim = simMs; }
   redrawGrid();
 }
 
-function markFound(s, how) {
+// one confirmed survivor at a time: finds queue up and come out at most every FIND_GAP_MS (real time)
+const FIND_GAP_MS = 7000;
+let findQueue = [], lastFoundAt = -1e9;
+function markFound(s, how, d) {
+  if (s.found || s.queued) return;
+  s.queued = true;
+  findQueue.push({ s, how, d });
+  releaseFinds();
+}
+function releaseFinds() {
+  if (!findQueue.length || Date.now() - lastFoundAt < FIND_GAP_MS) return;
+  lastFoundAt = Date.now();
+  const { s, how, d } = findQueue.shift();
+  confirmFound(s, how, d);
+}
+function confirmFound(s, how, d) {
   s.found = true;
-  ui.log(`✅ Survivor found: <b>${s.label}</b> (${how === 'pin' ? 'detection pin within 50 m' : 'drone passed within 30 m'})`, 'found');
+  const by = d ? `<b>${d.id}</b>` : 'the swarm';
+  ui.log(`✅ Survivor found by ${by}: <b>${s.label}</b> (${how === 'pin' ? 'detection pin within 50 m' : 'drone passed within 30 m'})`, 'found');
   view.updateSurvivors(survivors, reveal);
+  notifyRescue(s, d);
 }
 
+// =============================================================================================
+// Rescue drone R1: a heavy-lift octocopter. Search drones find people; R1 brings them out.
+// It lowers a fully enclosed capsule (seat + 5-point harness, locking door) on a dual rope onto the
+// roof / spot, waits for the person to board and the safety checks, lifts and flies them to base.
+// =============================================================================================
+const LIFT = { speedMps: 9, lowerMs: 6000, boardMs: 9000, liftMs: 5000, unloadMs: 4000 };
+const OFFICIALS = 'Bomba (JBPM) · APM · NADMA';
+let lifter = null;
+function resetLifter() {
+  const pad = { x: basePad.x + 70, y: basePad.y };
+  const cfg = { ...CONFIG, drone: { ...CONFIG.drone, speedMps: LIFT.speedMps, turnRateDegPerS: 60 } };
+  lifter = { pad, drone: createDrone(cfg, { ...pad, headingDeg: 0 }), status: 'standby', job: null, queue: [], t: 0, rescued: 0 };
+  view.setLifterPad(pad);
+}
+function notifyRescue(s, d) {
+  lifter.queue.push(s);
+  ui.alert(`🚨 <b>${d ? d.id : 'Swarm'}</b> confirmed a survivor: <b>${s.label}</b> · Rescue drone <b>R1</b> ${lifter.status === 'standby' ? 'dispatched' : `queued (#${lifter.queue.length})`} · ${OFFICIALS} notified`);
+  ui.log(`📣 Officials notified (${OFFICIALS}) · GPS ${xyToLatLng(s.x, s.y).map(v => v.toFixed(5)).join(', ')} · R1 ${lifter.status === 'standby' ? 'dispatched' : 'queued'}`, 'alert');
+}
+const LIFTER_LABEL = { standby: 'Standby at base', enroute: 'Flying to survivor', lowering: 'Lowering capsule', boarding: 'Boarding · safety checks',
+  lifting: 'Lifting capsule', returning: 'Flying to base', unloading: 'Handing over to medics' };
+function lifterUi() {
+  if (!lifter) return null;
+  const phaseMs = { lowering: LIFT.lowerMs, boarding: LIFT.boardMs, lifting: LIFT.liftMs, unloading: LIFT.unloadMs }[lifter.status];
+  return { status: lifter.status, label: LIFTER_LABEL[lifter.status], queue: lifter.queue.length, rescued: lifter.rescued,
+    pct: phaseMs ? Math.min(100, (100 * lifter.t) / phaseMs) : null, job: lifter.job?.label || null };
+}
+function tickLifter(dt) {
+  const L = lifter, dr = L.drone;
+  const next = (status, msg, kind = '') => { L.status = status; L.t = 0; if (msg) ui.log(msg, kind); pushSwarmUi(); };
+  switch (L.status) {
+    case 'standby':
+      if (L.queue.length) { L.job = L.queue.shift(); dr.setTarget(L.job, 'search'); next('enroute', `🚁 <b>R1</b> taking off for <b>${L.job.label}</b>`); }
+      break;
+    case 'enroute':
+      if (dr.tick(dt).arrived) next('lowering', `<b>R1</b> over the survivor · holding hover, lowering the enclosed capsule`);
+      break;
+    case 'lowering': if ((L.t += dt) >= LIFT.lowerMs) next('boarding', `<b>R1</b> capsule down · door open, person boarding`); break;
+    case 'boarding':
+      if ((L.t += dt) >= LIFT.boardMs) next('lifting', `<b>R1</b> safety checks OK: harness locked, door sealed, ropes tensioned · lifting`, 'found');
+      break;
+    case 'lifting':
+      if ((L.t += dt) >= LIFT.liftMs) { dr.setTarget(L.pad, 'search'); next('returning', `<b>R1</b> capsule secured under the drone · flying to base`); }
+      break;
+    case 'returning':
+      if (dr.tick(dt).arrived) next('unloading', `<b>R1</b> landed at base · handing over to medics`);
+      break;
+    case 'unloading':
+      if ((L.t += dt) >= LIFT.unloadMs) {
+        L.job.rescued = true; L.rescued++;
+        ui.log(`🏥 <b>${L.job.label}</b> rescued and with medics (${L.rescued} rescued)`, 'found');
+        view.updateSurvivors(survivors, reveal);
+        L.job = null; next('standby');
+      }
+      break;
+  }
+  if (['lowering', 'boarding', 'lifting', 'unloading'].includes(L.status)) pushSwarmUiThrottled();
+}
+let lastSwarmUi = 0;
+function pushSwarmUiThrottled() { const now = performance.now(); if (now - lastSwarmUi > 300) { lastSwarmUi = now; pushSwarmUi(); } }
+
 // hidden survivors occasionally call out; heard with the engine's own POD
-function survivorCalls() {
+function survivorCalls(d) {
   const pending = survivors.filter(s => !s.found);
   if (!pending.length) return;
   const s = pending[Math.random() * pending.length | 0];
-  const d = Math.hypot(s.x - drone.state.x, s.y - drone.state.y);
-  if (d > CONFIG.pod.hearingRadiusM) return;
-  const pod = S.podFor(d, currentNoiseDb(), CONFIG);
+  const st = d.drone.state;
+  const dist = Math.hypot(s.x - st.x, s.y - st.y);
+  if (dist > CONFIG.pod.hearingRadiusM) return;
+  const pod = S.podFor(dist, currentNoiseDb(), CONFIG);
   if (Math.random() >= pod) return;
-  const rel = wrapDeg(bearingTo(drone.state, s) - drone.state.headingDeg);
-  handleDetection({ type: 'detection', t: Date.now(), relBearingDeg: rel, confidence: Math.min(0.95, 0.35 + 0.6 * pod), ears: ['sim'], source: 'survivor' });
+  const rel = wrapDeg(bearingTo(st, s) - st.headingDeg);
+  handleDetection({ type: 'detection', t: Date.now(), relBearingDeg: rel, confidence: Math.min(0.95, 0.35 + 0.6 * pod), ears: ['sim'], source: 'survivor' }, d);
 }
 
 // ---- realtime ears ----
@@ -460,40 +685,62 @@ async function calibrate() {
 
 // ---- view updates ----
 function redrawGrid() {
-  const trust = Array.from({ length: N }, (_, i) => S.trustClass(grid, i, CONFIG));
-  view.updateGrid(trust, probs());
-  const cleared = trust.filter(t => t === 'cleared').length;
+  let cleared = 0, total = 0;
+  for (const d of fleet) {
+    const trust = trustOf(d.area);
+    view.updateGrid(d.id, trust, probsOf(d.area));
+    const c = trust.filter(t => t === 'cleared').length;
+    d.clearedPct = (100 * c) / d.area.n;
+    cleared += c; total += d.area.n;
+  }
+  if (fleet.length) pushSwarmUi();
   ui.setMetrics({
-    clearedPct: (100 * cleared) / N,
+    rescued: lifter?.rescued ?? 0,
+    clearedPct: total ? (100 * cleared) / total : 0,
     firstDetS: firstDetMs == null ? null : firstDetMs / 1000,
     found: survivors.filter(s => s.found).length, total: survivors.length,
     noiseDb: currentNoiseDb(),
   });
 }
-let lastPos = null, speedKmh = 0;
-function redrawDrone(dtSimMs = 0) {
-  const st = drone.state;
-  view.updateDrone(st, drone.target, CONFIG.pod.hearingRadiusM, currentNoiseDb() > CONFIG.pod.noiseRefDb);
-  if (dtSimMs > 0 && lastPos) {
-    const v = Math.hypot(st.x - lastPos.x, st.y - lastPos.y) / (dtSimMs / 1000) * 3.6;
-    speedKmh += (v - speedKmh) * 0.3;
-  } else if (!running) speedKmh = 0;
-  lastPos = { x: st.x, y: st.y };
-  const [lat, lng] = xyToLatLng(st.x, st.y);
-  ui.setTelemetry({ lat, lng, altM: ALTITUDE_M, speedKmh, headingDeg: st.headingDeg, mode: running ? st.mode : 'idle' });
+function redrawDrones(dtSimMs = 0) {
+  for (const d of fleet) {
+    const st = d.drone.state;
+    if (dtSimMs > 0 && d.lastPos) {
+      const v = Math.hypot(st.x - d.lastPos.x, st.y - d.lastPos.y) / (dtSimMs / 1000) * 3.6;
+      d.speedKmh += (v - d.speedKmh) * 0.3;
+    } else if (!running) d.speedKmh = 0;
+    d.lastPos = { x: st.x, y: st.y };
+  }
+  view.updateFleet(fleet.map(d => ({ id: d.id, state: d.drone.state, target: d.drone.target, status: d.status })),
+    selId, CONFIG.pod.hearingRadiusM, currentNoiseDb() > CONFIG.pod.noiseRefDb);
+  // the rail shows the selected drone
+  const d = sel(), st = d.drone.state, [lat, lng] = xyToLatLng(st.x, st.y);
+  const mode = d.status !== 'active' ? d.status : running ? st.mode : 'idle';
+  ui.setTelemetry({ lat, lng, altM: d.status === 'landed' ? 0 : ALTITUDE_M, speedKmh: d.speedKmh, headingDeg: st.headingDeg, mode, drone: d.id, color: d.color });
+  if (lifter) view.updateLifter(lifter.drone.state, lifter.status, lifterUi().pct);
 }
 
 // family report click
 view.onClick(xy => {
   if (!familyMode) return;
-  let best = 0, bd = Infinity;
-  for (let i = 0; i < N; i++) { const c = center(i); const d = Math.hypot(c.x - xy.x, c.y - xy.y); if (d < bd) { bd = d; best = i; } }
-  S.applyFamilyReport(grid, best, CONFIG);
-  ui.log(`📍 Family report: "last seen here" · cell ${best}`, 'family');
+  // raise the cell under the click in every drone grid that covers it
+  const hit = [];
+  for (const d of fleet) {
+    const a = d.area, b = a.bounds;
+    if (xy.x < b.x0 || xy.x > b.x1 || xy.y < b.y0 || xy.y > b.y1) continue;
+    let best = 0, bd = Infinity;
+    a.centers.forEach((c, i) => { const dd = Math.hypot(c.x - xy.x, c.y - xy.y); if (dd < bd) { bd = dd; best = i; } });
+    S.applyFamilyReport(a.grid, best, a.cfg);
+    hit.push(d.id);
+  }
+  ui.log(hit.length ? `📍 Family report: "last seen here" · raised priority for ${hit.join(', ')}`
+    : '📍 Family report is outside every drone area: give a drone an area there first', hit.length ? 'family' : 'warn');
   familyMode = false; ui.setFamilyMode(false);
-  if (drone.state.mode !== 'investigate') { current = null; }
+  // searching drones re-plan right away so the report pulls the nearest one in
+  for (const d of fleet) if (d.status === 'active' && d.drone.state.mode !== 'investigate') { d.current = null; d.drone.setTarget(null); }
   redrawGrid();
 });
+view.onDroneClick(id => selectDrone(id));
 
 // =============================================================================================
 // Main loop (every CONFIG.drone.tickMs)
@@ -506,37 +753,52 @@ function loop() {
     ui.setEarStatus(k, e ? { connected: now - e.last < 3000, db: e.db, floorDb: e.floorDb, screaming: now < e.screamUntil } : {});
   }
   if (!running) return;
+  releaseFinds();
   const dt = CONFIG.drone.tickMs * speed;
   simMs += dt;
 
-  // 1. fly
-  const { arrived } = drone.tick(dt);
-  const xy = { x: drone.state.x, y: drone.state.y };
+  scanAcc += dt; callAcc += dt;
+  const scanNow = scanAcc >= SCAN_EVERY_MS, callNow = callAcc >= CALL_EVERY_MS;
+  if (scanNow) { scanAcc -= SCAN_EVERY_MS; gridRedrawAcc = 1e9; }
+  if (callNow) callAcc -= CALL_EVERY_MS;
+  const noiseDb = currentNoiseDb();
 
-  // 2. "nothing heard" update, once per simulated second
-  scanAcc += dt;
-  if (scanAcc >= SCAN_EVERY_MS) { scanAcc -= SCAN_EVERY_MS; S.applyNegativeScan(grid, xy, currentNoiseDb(), CONFIG); gridRedrawAcc = 1e9; }
+  for (const d of fleet) {
+    if (d.status === 'landed') continue;
+    const drone = d.drone;
 
-  // people layer: hidden survivors call out; close passes in quiet find them
-  callAcc += dt;
-  if (callAcc >= CALL_EVERY_MS) { callAcc -= CALL_EVERY_MS; survivorCalls(); }
-  if (!rotorOn) for (const s of survivors) if (!s.found && Math.hypot(s.x - xy.x, s.y - xy.y) <= FOUND_PASS_M) markFound(s, 'pass');
-
-  // 3. pick the next waypoint on arrival (or if we have none)
-  if (arrived || !drone.target) {
-    if (arrived && drone.state.mode === 'investigate') ui.log('Investigation point reached · resuming search');
-    const w = waypointXY(xy);
-    if (w) {
-      if (!current || current.i !== w.i) ui.log(`→ next waypoint: cell ${w.i} (p=${(probs()[w.i] ?? 0).toFixed(3)})`, 'muted');
-      current = w;
-      drone.setTarget(w, 'search');
+    // 1. fly (a holding drone hovers in place)
+    const { arrived } = d.status === 'hold' ? { arrived: false } : drone.tick(dt);
+    if (d.status === 'rtb') {
+      if (arrived) { d.status = 'landed'; drone.setTarget(null); ui.log(`<b>${d.id}</b> landed at base`); pushSwarmUi(); }
+      continue;
     }
-  } else if (current === null && drone.state.mode === 'search') {
-    const w = waypointXY(xy); if (w) { current = w; drone.setTarget(w, 'search'); ui.log(`→ re-planned to cell ${w.i}`, 'muted'); }
+    const xy = { x: drone.state.x, y: drone.state.y };
+
+    // 2. "nothing heard" update from every flying drone, once per simulated second
+    if (scanNow) scanAll(xy, noiseDb);
+
+    // people layer: hidden survivors call out; close passes in quiet find them
+    if (callNow) survivorCalls(d);
+    if (!rotorOn) for (const s of survivors) if (!s.found && Math.hypot(s.x - xy.x, s.y - xy.y) <= FOUND_PASS_M) markFound(s, 'pass', d);
+    if (d.status !== 'active') continue;
+
+    // 3. next waypoint inside this drone's own area, on arrival (or if it has none)
+    if (arrived || !drone.target) {
+      if (arrived && drone.state.mode === 'investigate') ui.log(`<b>${d.id}</b> reached the investigation point · resuming search`);
+      const w = waypointFor(d);
+      if (w) {
+        if (d.id === selId && (!d.current || d.current.i !== w.i)) ui.log(`<b>${d.id}</b> → cell ${w.i} (p=${w.p.toFixed(3)})`, 'muted');
+        d.current = w;
+        drone.setTarget(w, 'search');
+      }
+    }
   }
 
+  tickLifter(dt);
+
   // 4. redraw
-  redrawDrone(dt);
+  redrawDrones(dt);
   gridRedrawAcc += CONFIG.drone.tickMs;
   if (gridRedrawAcc >= 250) { gridRedrawAcc = 0; redrawGrid(); }
 }
@@ -557,4 +819,4 @@ applySite();
 reset();
 if (location.hash === '#operation') setTab('ops');
 setInterval(loop, CONFIG.drone.tickMs);
-window.GEMA = { get CONFIG() { return CONFIG; }, get scenario() { return scenarioId; },get grid() { return grid; }, get drone() { return drone; }, survivors: () => survivors, handleDetection, MOCKS, ROOM };
+window.GEMA = { get CONFIG() { return CONFIG; }, get scenario() { return scenarioId; },get drone() { return sel()?.drone; }, get fleet() { return fleet; }, get lifter() { return lifter; }, selectDrone, survivors: () => survivors, handleDetection, MOCKS, ROOM };

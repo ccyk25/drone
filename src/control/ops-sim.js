@@ -275,7 +275,7 @@ function hud(ctx, st) {
   ctx.fillStyle = 'rgba(0,0,0,.65)'; rr(ctx, 14, 48, w2, 24, 6); ctx.fill();
   ctx.fillStyle = '#e6eaee'; ctx.fillText(st.sub, 23, 60.5);
   ctx.font = `600 11px ${MONO}`; ctx.textAlign = 'right';
-  const tel = `ALT ${Math.round(st.alt)} m  ·  ${st.thermal > 0.5 ? 'THERMAL' : 'CAMERA · YOLO'}`, w3 = ctx.measureText(tel).width + 18;
+  const tel = st.tel || `ALT ${Math.round(st.alt)} m  ·  ${st.thermal > 0.5 ? 'THERMAL' : 'CAMERA · YOLO'}`, w3 = ctx.measureText(tel).width + 18;
   ctx.fillStyle = 'rgba(0,0,0,.65)'; rr(ctx, W - 14 - w3, 14, w3, 24, 6); ctx.fill();
   ctx.fillStyle = MUTED; ctx.fillText(tel, W - 23, 26.5);
 }
@@ -293,7 +293,7 @@ function along(path, d) {
 }
 const inView = (st, p) => { const f = foot(st.alt); return Math.abs(p.x - st.x) < f.w / 2 - 4 && Math.abs(p.y - st.y) < f.h / 2 - 4; };
 
-export const SIM_LENGTH = { camera: 11, heat: 13 };
+export const SIM_LENGTH = { camera: 11, heat: 13, lift: 20 };
 
 function camState(t) {
   const st = { scene: 'city', thermal: 0, boxes: [], pins: [], fade: 0, path: CAM_PATH };
@@ -353,8 +353,147 @@ function heatState(t) {
   return st;
 }
 
-/** Draw simulation `sim` ('camera' | 'heat') at time t (s). ctx must already be scaled to SIM_W x SIM_H. */
+// ---------------------------------------------------------------- rescue lift (side view)
+// R1 heavy-lift drone lowers an enclosed capsule (padded seat, 5-point harness, locking door, shock-absorbing feet)
+// on a dual rope, the survivor boards, every safety check must pass, then it lifts slowly and flies to the medics.
+const GROUND = 470, ROOF = 300, TOWER = { x: 540, w: 230 }, CAP = { w: 50, h: 66 }, PAD_X = 150, ROOF_X = 640;
+const SKYLINE = (() => { const r = rng(5), a = []; for (let x = -10; x < W; x += 34 + r() * 30) a.push([x, 30 + r() * 26, 120 + r() * 140]); return a; })();
+const CHECKS = [[6.6, 'Fully enclosed capsule'], [9.6, 'Seat + 5-point harness locked'], [10.8, 'Door sealed and locked'],
+  [11.2, 'Dual rope tension OK (2 × 400 kg)'], [11.6, 'Wind 18 km/h · limit 35']];
+
+function liftState(t) {
+  const st = { phaseCol: '#ff6b81' };
+  // drone position and rope length (px, from the drone's belly to the capsule's top)
+  const stowed = 26, onRoof = ROOF - CAP.h - 122, onGround = 32;
+  if (t < 3) { st.x = lerp(-90, ROOF_X, ease(prog(t, 0, 3))); st.y = 110; st.rope = stowed; }
+  else if (t < 14) {
+    st.x = ROOF_X; st.y = 110;
+    st.rope = t < 6 ? lerp(stowed, onRoof, ease(prog(t, 3, 6))) : t < 11.8 ? onRoof : lerp(onRoof, onGround, ease(prog(t, 11.8, 14)));
+  } else { st.x = lerp(ROOF_X, PAD_X, ease(prog(t, 14, 16.6))); st.y = lerp(110, GROUND - CAP.h - onGround - 12, ease(prog(t, 16.4, 18))); st.rope = onGround; }
+  st.sway = t > 14 && t < 18 ? Math.sin(t * 2.4) * 3 * (1 - prog(t, 16.6, 18)) : 0;
+  st.cx = st.x + st.sway; st.cy = st.y + 12 + st.rope;                 // capsule top-centre
+  st.door = t < 6 ? 0 : t < 7 ? prog(t, 6, 7) : t < 10.2 ? 1 : t < 10.7 ? 1 - prog(t, 10.2, 10.7) : t < 18.2 ? 0 : prog(t, 18.2, 19);
+  st.aX = t < 7.2 ? 690 : t < 9 ? lerp(690, ROOF_X, ease(prog(t, 7.2, 9))) : null;   // person A walking; null = inside
+  st.seated = t >= 9; st.harness = prog(t, 9.1, 9.6); st.out = t > 19;
+  st.checks = CHECKS.filter(c => t > c[0]).length;
+  if (t < 3) { st.phase = 'R1 EN ROUTE'; st.sub = 'D3 pinned 2 people on B4 · the heavy-lift rescue drone flies in'; }
+  else if (t < 6) { st.phase = 'LOWERING'; st.sub = 'Dual rope lowers the enclosed capsule gently onto the roof'; }
+  else if (t < 9) { st.phase = 'BOARDING'; st.sub = 'Door opens · the survivor sits in the padded seat'; }
+  else if (t < 11.8) { st.phase = 'SAFETY CHECKS'; st.phaseCol = AMBER; st.sub = 'Nothing lifts until every check passes'; }
+  else if (t < 14) { st.phase = 'LIFTING'; st.sub = 'Slow winch-up · capsule stays sealed the whole way'; }
+  else if (t < 18) { st.phase = 'TO MEDICS'; st.sub = 'Flies low and slow to the field hospital'; }
+  else { st.phase = 'HANDED OVER'; st.phaseCol = GREEN; st.sub = 'Survivor with medics · R1 returns for person 2'; }
+  st.tel = `R1  ·  ROPE ${Math.round(st.rope / 6)} m  ·  LOAD ${st.seated && !st.out ? 74 : 0} kg`;
+  return st;
+}
+
+function sidePerson(ctx, x, feetY, col, wave, now, seated = false) {
+  ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = 4; ctx.lineCap = 'round';
+  const hip = seated ? feetY - 16 : feetY - 20, sh = hip - 18;
+  ctx.beginPath(); ctx.moveTo(x, hip); ctx.lineTo(x, sh); ctx.stroke();                         // torso
+  if (seated) { ctx.beginPath(); ctx.moveTo(x, hip); ctx.lineTo(x + 12, hip); ctx.lineTo(x + 12, feetY); ctx.stroke(); }
+  else { ctx.beginPath(); ctx.moveTo(x - 5, feetY); ctx.lineTo(x, hip); ctx.lineTo(x + 5, feetY); ctx.stroke(); }
+  const a = wave ? Math.sin(now * 8) * 0.5 : 0;
+  ctx.beginPath(); ctx.moveTo(x, sh + 3); ctx.lineTo(x + (wave ? 10 : 7), wave ? sh - 14 + a * 6 : sh + 16); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x, sh + 3); ctx.lineTo(x - 7, sh + 16); ctx.stroke();
+  ctx.fillStyle = SKIN; circle(ctx, x, sh - 8, 6.5);
+}
+
+function capsule(ctx, st, now) {
+  const x = st.cx - CAP.w / 2, y = st.cy;
+  // shock-absorbing feet
+  ctx.strokeStyle = '#9aa3ad'; ctx.lineWidth = 3;
+  for (const fx of [x + 8, x + CAP.w - 8]) { ctx.beginPath(); ctx.moveTo(fx, y + CAP.h - 2); ctx.lineTo(fx + (fx < st.cx ? -5 : 5), y + CAP.h + 6); ctx.stroke(); }
+  // shell
+  ctx.fillStyle = '#f2f4f6'; rr(ctx, x, y, CAP.w, CAP.h, 12); ctx.fill();
+  ctx.strokeStyle = '#ff4d6d'; ctx.lineWidth = 2.5; rr(ctx, x, y, CAP.w, CAP.h, 12); ctx.stroke();
+  ctx.fillStyle = '#ff4d6d'; ctx.fillRect(x, y + CAP.h - 14, CAP.w, 5);
+  // interior through the open doorway (door on the right side, opens outward)
+  const dw = CAP.w - 10, open = st.door;
+  ctx.save(); rr(ctx, x + 5, y + 8, dw, CAP.h - 18, 7); ctx.clip();
+  ctx.fillStyle = '#3a4048'; ctx.fillRect(x + 5, y + 8, dw, CAP.h - 18);
+  ctx.fillStyle = '#5b6672'; ctx.fillRect(x + 9, y + 18, 8, CAP.h - 30); ctx.fillRect(x + 9, y + CAP.h - 26, 26, 6);   // padded seat
+  if (st.seated && !st.out) {
+    sidePerson(ctx, st.cx - 9, y + CAP.h - 12, '#4a90e2', false, now, true);
+    if (st.harness > 0) { ctx.strokeStyle = AMBER; ctx.lineWidth = 2; ctx.globalAlpha = st.harness;
+      ctx.beginPath(); ctx.moveTo(st.cx - 13, y + 22); ctx.lineTo(st.cx - 3, y + CAP.h - 26); ctx.moveTo(st.cx - 5, y + 22); ctx.lineTo(st.cx - 13, y + CAP.h - 26); ctx.stroke();
+      ctx.globalAlpha = 1; }
+  }
+  ctx.restore();
+  // door panel: slides off to the right as it opens; window shows whoever is inside
+  if (open < 1) {
+    const dx = x + 5 + open * dw * 0.9;
+    ctx.fillStyle = '#e4e8ec'; rr(ctx, dx, y + 8, dw * (1 - open * 0.9), CAP.h - 18, 7); ctx.fill();
+    ctx.fillStyle = '#7fb2ff99'; rr(ctx, dx + 8, y + 14, Math.max(2, dw * (1 - open * 0.9) - 16), 16, 5); ctx.fill();
+    if (st.seated && !st.out && open === 0) { ctx.fillStyle = SKIN; circle(ctx, st.cx - 9, y + 23, 5); }
+    if (open === 0) { ctx.fillStyle = st.checks >= 3 ? GREEN : AMBER; circle(ctx, x + CAP.w - 10, y + CAP.h / 2 + 4, 3); }  // lock light
+  }
+  ctx.fillStyle = '#ff4d6d'; ctx.font = `900 12px ${SANS}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('+', st.cx, y + CAP.h - 3.5);
+}
+
+function lifter(ctx, x, y, now) {
+  ctx.fillStyle = 'rgba(0,0,0,.25)';
+  ctx.strokeStyle = '#2a2f36'; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(x - 62, y); ctx.lineTo(x + 62, y); ctx.stroke();
+  for (const ox of [-62, -36, 36, 62]) {
+    ctx.strokeStyle = '#2a2f36'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x + ox, y); ctx.lineTo(x + ox, y - 8); ctx.stroke();
+    const s = Math.abs(Math.sin(now * 40 + ox)) * 14 + 4;
+    ctx.fillStyle = 'rgba(255,255,255,.55)'; ctx.beginPath(); ctx.ellipse(x + ox, y - 9, s, 2.2, 0, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.fillStyle = '#f4f7fa'; rr(ctx, x - 26, y - 8, 52, 20, 7); ctx.fill();
+  ctx.strokeStyle = '#ff4d6d'; ctx.lineWidth = 2; rr(ctx, x - 26, y - 8, 52, 20, 7); ctx.stroke();
+  ctx.fillStyle = '#ff4d6d'; ctx.font = `900 14px ${SANS}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('+', x - 12, y + 2);
+  ctx.font = `700 10px ${MONO}`; ctx.fillText('R1', x + 10, y + 2.5);
+  ctx.fillStyle = '#1b2128'; ctx.fillRect(x - 14, y + 12, 28, 6);                                      // winch
+}
+
+function renderLift(ctx, t, now) {
+  const st = liftState(t);
+  const g = ctx.createLinearGradient(0, 0, 0, GROUND); g.addColorStop(0, '#16222e'); g.addColorStop(1, '#3b4b5a');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#24313d';
+  for (const [x, w, h] of SKYLINE) ctx.fillRect(x, GROUND - h, w, h);
+  // flood water + a dry hill with the field hospital
+  ctx.fillStyle = '#28506e'; ctx.fillRect(0, GROUND, W, H - GROUND);
+  ctx.strokeStyle = 'rgba(255,255,255,.12)'; ctx.lineWidth = 1.5;
+  for (let i = 0; i < 14; i++) { const x = ((i * 83 + now * 14) % (W + 60)) - 30; ctx.beginPath(); ctx.moveTo(x, GROUND + 18 + (i % 3) * 18); ctx.lineTo(x + 26, GROUND + 18 + (i % 3) * 18); ctx.stroke(); }
+  ctx.fillStyle = '#4b5a3c'; ctx.beginPath(); ctx.moveTo(10, H); ctx.lineTo(40, GROUND); ctx.lineTo(290, GROUND); ctx.lineTo(330, H); ctx.fill();
+  ctx.fillStyle = '#e9edf0'; ctx.beginPath(); ctx.moveTo(210, GROUND); ctx.lineTo(240, GROUND - 46); ctx.lineTo(290, GROUND - 46); ctx.lineTo(300, GROUND); ctx.fill();
+  ctx.fillStyle = '#ff4d6d'; ctx.fillRect(259, GROUND - 36, 12, 4); ctx.fillRect(263, GROUND - 40, 4, 12);
+  label(ctx, 'Field hospital', 255, GROUND - 58);
+  ctx.strokeStyle = '#ffffffaa'; ctx.lineWidth = 2; ctx.setLineDash([5, 5]); ctx.strokeRect(PAD_X - 34, GROUND - 4, 68, 4); ctx.setLineDash([]);
+  sidePerson(ctx, 196, GROUND, '#3be07c', false, now); sidePerson(ctx, 312, GROUND + 8, '#3be07c', false, now);
+  // the high-rise
+  ctx.fillStyle = '#4c555e'; ctx.fillRect(TOWER.x, ROOF, TOWER.w, GROUND - ROOF + 30);
+  ctx.fillStyle = '#2b3138';
+  for (let y = ROOF + 18; y < GROUND; y += 26) for (let x = TOWER.x + 14; x < TOWER.x + TOWER.w - 14; x += 30) ctx.fillRect(x, y, 16, 12);
+  ctx.fillStyle = '#6a737c'; ctx.fillRect(TOWER.x - 4, ROOF - 6, TOWER.w + 8, 8);
+  label(ctx, 'High-rise B4 · roof', TOWER.x + TOWER.w / 2, ROOF + 20);
+  // person 2 keeps waving on the roof; person 1 walks to the capsule
+  sidePerson(ctx, 728, ROOF - 6, '#4a90e2', true, now);
+  if (t > 12) label(ctx, 'Person 2 · next trip', 728, ROOF - 64);
+  if (st.aX != null) sidePerson(ctx, st.aX, ROOF - 6, '#4a90e2', t < 3, now);
+  if (st.out) sidePerson(ctx, PAD_X + 40, GROUND, '#4a90e2', false, now);
+  // dual rope + capsule + drone
+  ctx.strokeStyle = '#d9c38a'; ctx.lineWidth = 2;
+  for (const o of [-12, 12]) { ctx.beginPath(); ctx.moveTo(st.x + o * 0.6, st.y + 18); ctx.lineTo(st.cx + o, st.cy + 2); ctx.stroke(); }
+  capsule(ctx, st, now);
+  lifter(ctx, st.x, st.y, now);
+  // safety checklist (top right, under the telemetry chip)
+  const px = W - 14 - 268, py = 48;
+  ctx.fillStyle = 'rgba(0,0,0,.72)'; rr(ctx, px, py, 268, 30 + CHECKS.length * 22, 8); ctx.fill();
+  ctx.font = `700 11px ${MONO}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillStyle = MUTED; ctx.fillText('SAFETY · LIFT ONLY IF ALL PASS', px + 12, py + 15);
+  CHECKS.forEach(([, txt], i) => {
+    const ok = i < st.checks, y = py + 36 + i * 22;
+    ctx.fillStyle = ok ? GREEN : 'rgba(255,255,255,.25)'; circle(ctx, px + 18, y, 6);
+    if (ok) { ctx.strokeStyle = '#000'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(px + 15, y); ctx.lineTo(px + 17.5, y + 2.5); ctx.lineTo(px + 21.5, y - 2.5); ctx.stroke(); }
+    ctx.font = `500 12.5px ${SANS}`; ctx.fillStyle = ok ? '#e6eaee' : '#8a929c'; ctx.fillText(txt, px + 32, y + 0.5);
+  });
+  hud(ctx, st);
+}
+
+/** Draw simulation `sim` ('camera' | 'heat' | 'lift') at time t (s). ctx must already be scaled to SIM_W x SIM_H. */
 export function renderSim(ctx, sim, t, now = t) {
+  if (sim === 'lift') return renderLift(ctx, t, now);
   const st = sim === 'heat' ? heatState(t) : camState(t);
   const f = foot(st.alt), fx = st.x - f.w / 2, fy = st.y - f.h / 2;
   drawWorld(ctx, st.scene, false, now);

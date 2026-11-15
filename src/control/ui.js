@@ -35,7 +35,7 @@ function qrInto(el, text) {
   }
 }
 
-const KIND_LABEL = { det: 'Detection', found: 'Survivor found', family: 'Family report', sim: 'Simulation', warn: 'Warning', muted: 'Navigation', '': 'System' };
+const KIND_LABEL = { alert: 'Officials notified', rescue: 'Rescue drone R1', area: 'Search area', det: 'Detection', found: 'Survivor found', family: 'Family report', sim: 'Simulation', warn: 'Warning', muted: 'Navigation', '': 'System' };
 
 export function createUI(root, opts) {
   const { room, earUrl, handlers, scenario = 'flood', site = null, sites = {} } = opts;
@@ -71,7 +71,19 @@ export function createUI(root, opts) {
       <p class="drawer-note">Real post-disaster aerial imagery. Survivors are simulated. Toggle "Post-disaster imagery" in the layer menu to compare with before.</p>
     </section>
 
+    <section class="swarm" aria-label="Drone swarm">
+      <div class="swarm-list" role="listbox" aria-label="Select a drone"></div>
+      <div class="swarm-act">
+        <span class="swarm-sel hudtxt">D1</span>
+        <button class="btn sm toggle area" data-act="d-area" title="Click or drag on the map: the selected drone searches only there">⬚ Set area</button>
+        <button class="btn sm" data-act="d-all" title="Place D1→D5 one after another: click (or drag) a box for each">⬚ Place all 5</button>
+        <button class="btn sm toggle" data-act="d-hold" title="Hover in place and keep listening">⏸ Hold</button>
+        <button class="btn sm" data-act="d-land" title="Fly back to base and land">⤓ Land</button>
+      </div>
+    </section>
+
     <aside class="rail hudtxt">
+      <div class="kv"><div class="k">Selected drone</div><div class="v sm sel-drone" data-t="drone">–</div></div>
       <div class="kv site-kv"><div class="k">Site</div><div class="v sm" data-t="site">–</div><div class="ev" data-t="event"></div></div>
       <div class="kv"><div class="k">Search area</div><div class="v sm" data-t="area">–</div></div>
       <div class="sep"></div>
@@ -201,6 +213,7 @@ export function createUI(root, opts) {
     const b = ev.target.closest('button');
     if (!b) return;
     if (b.dataset.tab) return handlers.onTab?.(b.dataset.tab);
+    if (b.dataset.drone) return handlers.onSelectDrone?.(b.dataset.drone);
     if (b.dataset.sim) return handlers.onSimScream?.(b.dataset.sim);
     if (b.dataset.view) {
       $$('[data-seg="view"] button', root).forEach(x => x.classList.toggle('on', x === b));
@@ -219,8 +232,12 @@ export function createUI(root, opts) {
       case 'feed': $('.feed', root).classList.toggle('min'); b.textContent = $('.feed', root).classList.contains('min') ? '+' : '–'; break;
       case 'qr': toggleBtn('qr', on); qrpop.classList.toggle('open', on); break;
       case 'rotor': api.setRotor(on); handlers.onRotor?.(on); break;
-      case 'family': if (on) api.setSelecting(false), handlers.onSelectArea?.(false); api.setFamilyMode(on); handlers.onFamilyMode?.(on); break;
-      case 'area': api.setSelecting(on); handlers.onSelectArea?.(on); break;
+      case 'family': if (on) api.setSelecting(false), api.setDroneSelecting(false), handlers.onSelectArea?.(false); api.setFamilyMode(on); handlers.onFamilyMode?.(on); break;
+      case 'area': api.setDroneSelecting(false); api.setSelecting(on); handlers.onSelectArea?.(on); break;
+      case 'd-area': api.setSelecting(false); api.setDroneSelecting(on); handlers.onDroneArea?.(on); break;
+      case 'd-all': api.setSelecting(false); handlers.onPlaceAll?.(); break;
+      case 'd-hold': handlers.onDroneHold?.(); break;
+      case 'd-land': handlers.onDroneLand?.(); break;
       case 'follow': toggleBtn('follow', on); handlers.onFollow?.(on); break;
       case 'reveal': toggleBtn('reveal', on); handlers.onReveal?.(on); break;
     }
@@ -233,7 +250,17 @@ export function createUI(root, opts) {
     if (ev.key !== 'Escape') return;
     setDrawer(false); qrpop.classList.remove('open'); toggleBtn('qr', false);
     if ($('[data-act="area"]', root).classList.contains('on')) { api.setSelecting(false); handlers.onSelectArea?.(false); }
+    if ($('[data-act="d-area"]', root).classList.contains('on')) { api.setDroneSelecting(false); handlers.onDroneArea?.(false); }
   });
+  // keys 1-5 select a drone (not while typing, not on the Drone operation tab)
+  document.addEventListener('keydown', ev => {
+    if (ev.ctrlKey || ev.metaKey || ev.altKey || /INPUT|TEXTAREA|SELECT/.test(ev.target.tagName) || document.body.classList.contains('tab-ops')) return;
+    const card = $$('.dcard', root)[Number(ev.key) - 1];
+    if (card) handlers.onSelectDrone?.(card.dataset.drone);
+  });
+  // leaflet controls sit just under the swarm bar, whatever its height
+  const swarmEl = $('.swarm', root);
+  new ResizeObserver(() => document.documentElement.style.setProperty('--swarm-h', `${swarmEl.offsetHeight}px`)).observe(swarmEl);
 
   $('[data-act="volume"]', root).addEventListener('input', ev => {
     $('[data-t="vol"]', root).textContent = `${ev.target.value}%`;
@@ -269,14 +296,16 @@ export function createUI(root, opts) {
       st.textContent = connected ? (screaming ? 'scream!' : 'live') : 'offline';
       st.classList.toggle('on', !!connected);
     },
-    setMetrics({ clearedPct, firstDetS, found, total, noiseDb }) {
+    setMetrics({ clearedPct, firstDetS, found, total, noiseDb, rescued }) {
       if (clearedPct != null) $('[data-m="cleared"]', root).textContent = `${clearedPct.toFixed(0)}%`;
       $('[data-m="first"]', root).textContent = firstDetS == null ? '–' : `${firstDetS.toFixed(1)}s`;
       if (total != null) $('[data-m="found"]', root).textContent = `${found}/${total}`;
+      if (rescued != null) $('[data-m="found"]', root).nextElementSibling.textContent = rescued ? `Found · ${rescued} rescued` : 'Found';
       if (noiseDb != null) $('[data-m="noise"]', root).textContent = noiseDb.toFixed(0);
     },
     /** { lat, lng, altM, speedKmh, headingDeg, mode } */
-    setTelemetry({ lat, lng, altM, speedKmh, headingDeg, mode }) {
+    setTelemetry({ lat, lng, altM, speedKmh, headingDeg, mode, drone, color }) {
+      if (drone) { const el = $('[data-t="drone"]', root); el.textContent = drone; el.style.color = color || ''; }
       $('[data-t="lat"]', root).textContent = `${lat.toFixed(4)}°`;
       $('[data-t="lng"]', root).textContent = `${lng.toFixed(4)}°`;
       $('[data-t="alt"]', root).textContent = altM.toFixed(0);
@@ -284,8 +313,57 @@ export function createUI(root, opts) {
       const h = (headingDeg + 360) % 360;
       $('[data-t="hdg"]', root).textContent = h.toFixed(0).padStart(3, '0');
       $('[data-t="needle"]', root).style.transform = `rotate(${h}deg)`;
-      setPill('mode', mode === 'investigate' ? 'Investigate' : mode === 'search' ? 'Searching' : 'Hover',
-        mode === 'investigate' ? 'r' : mode === 'search' ? 'b' : '');
+      const MODES = { investigate: ['Investigate', 'r'], search: ['Searching', 'b'], hold: ['Holding', 'a'], rtb: ['Returning', 'a'], landed: ['Landed', ''] };
+      const [txt, cls] = MODES[mode] || ['Hover', ''];
+      setPill('mode', txt, cls);
+    },
+    /** drones: [{ id, color, status, label, clearedPct }] · selId · sel: { hold, grounded } for the selected drone */
+    setSwarm(drones, selId, { hold = false, grounded = false } = {}, lifter = null) {
+      const list = $('.swarm-list', root);
+      if (list.querySelectorAll('.dcard').length !== drones.length) {
+        list.innerHTML = drones.map((d, k) => `
+          <button class="dcard" data-drone="${d.id}" role="option" style="--dc:${d.color}" title="Select ${d.id} (key ${k + 1})">
+            <i class="dot"></i><b>${d.id}</b><small></small><span class="bar"><i></i></span>
+          </button>`).join('') + `
+          <div class="rcard" title="R1 heavy-lift rescue drone: lowers an enclosed, harnessed capsule on a dual rope">
+            <i class="dot"></i><b>R1</b><small></small><span class="bar"><i></i></span>
+          </div>`;
+      }
+      const rc = $('.rcard', list);
+      if (lifter && rc) {
+        rc.dataset.status = lifter.status;
+        const q = lifter.queue ? ` · ${lifter.queue} waiting` : '';
+        $('small', rc).textContent = `${lifter.label}${lifter.job && lifter.status !== 'standby' ? `: ${lifter.job}` : ''}${q} · ${lifter.rescued} saved`;
+        $('.bar i', rc).style.width = `${lifter.pct ?? (lifter.status === 'standby' ? 0 : 100)}%`;
+      }
+      drones.forEach((d, k) => {
+        const c = list.querySelectorAll('.dcard')[k];
+        c.classList.toggle('on', d.id === selId);
+        c.setAttribute('aria-selected', String(d.id === selId));
+        c.dataset.status = d.status;
+        $('small', c).textContent = `${d.label} · ${d.clearedPct.toFixed(0)}%`;
+        $('.bar i', c).style.width = `${d.clearedPct}%`;
+      });
+      const s = drones.find(d => d.id === selId);
+      if (s) { const el = $('.swarm-sel', root); el.textContent = s.id; el.style.color = s.color; }
+      const hb = $('[data-act="d-hold"]', root), lb = $('[data-act="d-land"]', root);
+      hb.classList.toggle('on', hold); hb.textContent = hold ? '▶ Resume' : '⏸ Hold'; hb.disabled = grounded;
+      lb.textContent = grounded ? '⤒ Launch' : '⤓ Land';
+    },
+    setDroneSelecting(on) {
+      toggleBtn('d-area', on);
+      document.body.classList.toggle('area-mode', on || $('[data-act="area"]', root).classList.contains('on'));
+      if (on) { toggleBtn('family', false); document.body.classList.remove('family-mode'); }
+    },
+    /** banner at the top: survivor found → rescue drone + officials notified */
+    alert(html) {
+      let box = $('.alerts', root);
+      if (!box) { box = document.createElement('div'); box.className = 'alerts'; root.appendChild(box); }
+      const el = document.createElement('div');
+      el.className = 'alert-toast'; el.setAttribute('role', 'alert'); el.innerHTML = html;
+      box.prepend(el);
+      while (box.children.length > 3) box.lastChild.remove();
+      setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 400); }, 7000);
     },
     setCalibStatus(text) { $('.calib', root).textContent = text || ''; },
     setTab(tab) {

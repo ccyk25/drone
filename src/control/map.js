@@ -123,27 +123,23 @@ export function createMap(elId, config) {
   const pinLayer = L.layerGroup().addTo(map);
   const survivorLayer = L.layerGroup().addTo(map);
 
-  let cells = [];           // L.rectangle per cell
+  const grids = new Map();  // key (drone id) → L.rectangle per cell
   let heatmap = false;
-  let half = config.grid.cellMeters / 2;
 
-  /** Build cell rectangles from a list of local cell centres. */
-  function buildGrid(centers, cellMeters) {
-    gridLayer.clearLayers();
-    half = cellMeters / 2;
-    cells = centers.map((c, i) => {
-      const r = L.rectangle([xyToLatLng(c.x - half, c.y - half), xyToLatLng(c.x + half, c.y + half)],
-        { weight: 1, ...TRUST_STYLE.unsearched, interactive: false });
-      r.addTo(gridLayer);
-      r._gemaIdx = i;
-      return r;
-    });
-    const all = centers.flatMap(c => [xyToLatLng(c.x - half, c.y - half), xyToLatLng(c.x + half, c.y + half)]);
-    return L.latLngBounds(all);
+  /** One grid per drone: list = [{ key, centers, cellMeters }]. Rebuilds every grid. */
+  function buildGrids(list) {
+    gridLayer.clearLayers(); grids.clear();
+    for (const g of list) {
+      const half = g.cellMeters / 2;
+      grids.set(g.key, g.centers.map(c => L.rectangle([xyToLatLng(c.x - half, c.y - half), xyToLatLng(c.x + half, c.y + half)],
+        { weight: 1, ...TRUST_STYLE.unsearched, interactive: false }).addTo(gridLayer)));
+    }
   }
 
-  /** trust[i] = 'cleared'|'uncertain'|'unsearched', probs[i] = number. */
-  function updateGrid(trust, probs) {
+  /** key: which grid · trust[i] = 'cleared'|'uncertain'|'unsearched', probs[i] = number. */
+  function updateGrid(key, trust, probs) {
+    const cells = grids.get(key);
+    if (!cells) return;
     const maxP = Math.max(...probs, 1e-12);
     for (let i = 0; i < cells.length; i++) {
       if (heatmap) {
@@ -155,6 +151,16 @@ export function createMap(elId, config) {
     }
   }
 
+  const boundsOf = b => L.latLngBounds([xyToLatLng(b.x0, b.y0), xyToLatLng(b.x1, b.y1)]);
+  /** the mission area: where the disaster is (and where the simulated survivors are) */
+  const missionLayer = L.layerGroup().addTo(map);
+  function setMission(b) {
+    missionLayer.clearLayers();
+    L.rectangle(boundsOf(b), { color: '#ffffff', weight: 1.5, opacity: 0.7, dashArray: '3 7', fill: false, interactive: false }).addTo(missionLayer);
+    const icon = L.divIcon({ className: 'sector-tag-wrap', iconSize: null, iconAnchor: [-4, 22], html: '<div class="mission-tag">Mission area</div>' });
+    L.marker(xyToLatLng(b.x0, b.y1), { icon, interactive: false, keyboard: false }).addTo(missionLayer);
+  }
+
   function setHeatmap(on) { heatmap = !!on; }
 
   /** Fit bounds into the part of the map not covered by the HUD panels. */
@@ -162,54 +168,121 @@ export function createMap(elId, config) {
     const css = getComputedStyle(document.documentElement);
     const px = name => parseFloat(css.getPropertyValue(name)) || 0;
     const wide = window.innerWidth > 900;
-    const rail = $px('.rail'), feed = $px('.feed'), dock = $px('.dock');
+    const rail = $px('.rail'), feed = $px('.feed'), dock = $px('.dock'), swarm = $px('.swarm');
     function $px(sel) { const n = document.querySelector(sel); return n ? n.getBoundingClientRect() : null; }
-    const top = px('--top') + 16 + (!wide && feed ? feed.height + 8 : 0);
+    const top = Math.max(px('--top') + 16 + (!wide && feed ? feed.height + 8 : 0), swarm && swarm.height ? swarm.bottom + 16 : 0);
     const left = wide && rail ? rail.right + 16 : 16;
     const right = wide && feed ? window.innerWidth - feed.left + 16 : 16;
     const bottom = dock ? window.innerHeight - dock.top + 16 : 16;
     map.fitBounds(bounds, { paddingTopLeft: [left, top], paddingBottomRight: [right, bottom] });
   }
 
-  // ---- drone sprite ----
-  const droneIcon = L.divIcon({
-    className: 'drone-icon',
-    iconSize: [56, 56], iconAnchor: [28, 28],
-    html: `<div class="drone-body"><div class="drone-shadow"></div>
-      <div class="arm a1"></div><div class="arm a2"></div>
-      <div class="rotor r1"></div><div class="rotor r2"></div><div class="rotor r3"></div><div class="rotor r4"></div>
-      <div class="hull"></div><div class="nose"></div></div>`,
-  });
-  const droneMarker = L.marker(config.map.center, { icon: droneIcon, interactive: false, zIndexOffset: 1000 }).addTo(map);
-  const hearCircle = L.circle(config.map.center, {
-    radius: config.pod.hearingRadiusM, color: '#5fd0ff', weight: 1.5, dashArray: '6 6', fillOpacity: 0.06, interactive: false,
-  }).addTo(map);
-  const targetMarker = L.circleMarker(config.map.center, { radius: 6, color: '#fff', weight: 2, fillColor: '#5fd0ff', fillOpacity: 0.9, interactive: false }).addTo(map);
+  // ---- drone swarm: one sprite, hearing circle, target and trail per drone ----
+  const sectorLayer = L.layerGroup().addTo(map);
+  const baseLayer = L.layerGroup().addTo(map);
+  const fleetLayer = L.layerGroup().addTo(map);
   const bearingLine = L.polyline([], { color: '#ff4d6d', weight: 3, dashArray: '2 8', interactive: false }).addTo(map);
-  let trail = L.polyline([], { color: '#5fd0ff', weight: 2.5, opacity: 0.75, interactive: false }).addTo(trailLayer);
-  let trailPts = [];
-  let follow = false;
+  const fleet = new Map();      // id → { color, marker, hear, target, trail, pts }
+  let follow = false, onDronePick = null;
 
-  function updateDrone(state, target, hearingRadiusM, noisy) {
-    const ll = xyToLatLng(state.x, state.y);
-    droneMarker.setLatLng(ll);
-    const el = droneMarker.getElement();
-    if (el) {
-      const body = el.querySelector('.drone-body');
-      if (body) body.style.transform = `rotate(${state.headingDeg}deg)`;
-      el.classList.toggle('investigate', state.mode === 'investigate');
+  /** list: [{ id, color }]. Rebuilds every drone sprite. */
+  function setFleet(list) {
+    fleetLayer.clearLayers(); trailLayer.clearLayers(); fleet.clear();
+    for (const d of list) {
+      const icon = L.divIcon({
+        className: 'drone-icon swarm', iconSize: [56, 56], iconAnchor: [28, 28],
+        html: `<div class="drone-body" style="--dc:${d.color}"><div class="drone-shadow"></div>
+          <div class="arm a1"></div><div class="arm a2"></div>
+          <div class="rotor r1"></div><div class="rotor r2"></div><div class="rotor r3"></div><div class="rotor r4"></div>
+          <div class="hull"></div><div class="nose"></div></div><div class="drone-tag" style="--dc:${d.color}">${d.id}</div>`,
+      });
+      const marker = L.marker(config.map.center, { icon, zIndexOffset: 1000, keyboard: false, title: `Select ${d.id}` }).addTo(fleetLayer);
+      marker.on('click', () => onDronePick?.(d.id));
+      const hear = L.circle(config.map.center, { radius: 1, color: d.color, weight: 1.2, dashArray: '6 6', fillColor: d.color, fillOpacity: 0.03, interactive: false }).addTo(fleetLayer);
+      const target = L.circleMarker(config.map.center, { radius: 5, color: '#fff', weight: 2, fillColor: d.color, fillOpacity: 0.95, opacity: 0, interactive: false }).addTo(fleetLayer);
+      const trail = L.polyline([], { color: d.color, weight: 2.2, opacity: 0.6, interactive: false }).addTo(trailLayer);
+      fleet.set(d.id, { color: d.color, marker, hear, target, trail, pts: [] });
     }
-    hearCircle.setLatLng(ll);
-    hearCircle.setRadius(hearingRadiusM);
-    hearCircle.setStyle({ color: noisy ? '#ffb020' : '#5fd0ff' });
-    if (target) targetMarker.setLatLng(xyToLatLng(target.x, target.y));
-    const last = trailPts[trailPts.length - 1];
-    if (!last || Math.hypot(last.x - state.x, last.y - state.y) > 4) {
-      trailPts.push({ x: state.x, y: state.y });
-      if (trailPts.length > 1500) trailPts.shift();
-      trail.setLatLngs(trailPts.map(p => xyToLatLng(p.x, p.y)));
+  }
+
+  /** items: [{ id, state, target, status }] · selId: selected drone · noisy: rotor noise drowning voices */
+  function updateFleet(items, selId, hearingRadiusM, noisy) {
+    for (const it of items) {
+      const f = fleet.get(it.id);
+      if (!f) continue;
+      const { state } = it, ll = xyToLatLng(state.x, state.y), isSel = it.id === selId, landed = it.status === 'landed';
+      f.marker.setLatLng(ll);
+      f.marker.setZIndexOffset(isSel ? 1200 : 1000);
+      const el = f.marker.getElement();
+      if (el) {
+        const body = el.querySelector('.drone-body');
+        if (body) body.style.transform = `rotate(${state.headingDeg}deg)`;
+        el.classList.toggle('investigate', state.mode === 'investigate' && it.status === 'active');
+        el.classList.toggle('sel', isSel);
+        el.classList.toggle('landed', landed);
+      }
+      f.hear.setLatLng(ll);
+      f.hear.setRadius(hearingRadiusM);
+      f.hear.setStyle(landed ? { opacity: 0, fillOpacity: 0 }
+        : { color: noisy ? '#ffb020' : f.color, opacity: isSel ? 0.95 : 0.4, weight: isSel ? 2 : 1.2, fillOpacity: isSel ? 0.06 : 0.02 });
+      if (it.target && isSel) f.target.setLatLng(xyToLatLng(it.target.x, it.target.y)).setStyle({ opacity: 1, fillOpacity: 0.95 });
+      else f.target.setStyle({ opacity: 0, fillOpacity: 0 });
+      f.trail.setStyle({ opacity: isSel ? 0.9 : 0.45, weight: isSel ? 3 : 2 });
+      const last = f.pts[f.pts.length - 1];
+      if (!last || Math.hypot(last.x - state.x, last.y - state.y) > 4) {
+        f.pts.push({ x: state.x, y: state.y });
+        if (f.pts.length > 1200) f.pts.shift();
+        f.trail.setLatLngs(f.pts.map(p => xyToLatLng(p.x, p.y)));
+      }
+      if (follow && isSel) map.panTo(ll, { animate: false });
     }
-    if (follow) map.panTo(ll, { animate: false });
+  }
+
+  /** sectors: [{ id, color, x0, y0, x1, y1 }] in local metres: each drone's operating area */
+  function setSectors(sectors, selId) {
+    sectorLayer.clearLayers();
+    for (const s of sectors) {
+      const isSel = s.id === selId;
+      L.rectangle([xyToLatLng(s.x0, s.y0), xyToLatLng(s.x1, s.y1)], {
+        color: s.color, weight: isSel ? 3.5 : 1.6, opacity: isSel ? 1 : 0.7, dashArray: isSel ? null : '8 6',
+        fill: true, fillColor: s.color, fillOpacity: isSel ? 0.08 : 0, interactive: false,
+      }).addTo(sectorLayer);
+      const icon = L.divIcon({ className: 'sector-tag-wrap', iconSize: null, iconAnchor: [-4, -4],
+        html: `<div class="sector-tag${isSel ? ' on' : ''}" style="--dc:${s.color}">${s.id} area</div>` });
+      L.marker(xyToLatLng(s.x0, s.y1), { icon, interactive: false, keyboard: false }).addTo(sectorLayer);
+    }
+  }
+
+  // ---- rescue drone R1 (heavy lift, carries the enclosed capsule) ----
+  const lifterIcon = L.divIcon({
+    className: 'lifter-icon', iconSize: [84, 84], iconAnchor: [42, 42],
+    html: `<div class="lifter-body"><div class="drone-shadow"></div>${[0, 45, 90, 135].map(a => `<div class="larm" style="transform:rotate(${a}deg)"></div>`).join('')}
+      ${[0, 45, 90, 135, 180, 225, 270, 315].map(a => `<div class="lrotor" style="transform:rotate(${a}deg) translateY(-34px)"><i></i></div>`).join('')}
+      <div class="lhull"><b>+</b></div></div><div class="lifter-ring"></div><div class="lifter-tag">R1 RESCUE</div><div class="lifter-state"></div>`,
+  });
+  const lifterMarker = L.marker(config.map.center, { icon: lifterIcon, interactive: false, keyboard: false, zIndexOffset: 1300 }).addTo(map);
+  const lifterPadLayer = L.layerGroup().addTo(map);
+  const LIFTER_TXT = { lowering: 'Lowering capsule', boarding: 'Boarding · safety checks', lifting: 'Lifting capsule', unloading: 'To medics' };
+  function setLifterPad(xy) {
+    lifterPadLayer.clearLayers();
+    const icon = L.divIcon({ className: 'base-wrap', iconSize: [56, 56], iconAnchor: [28, 28], html: '<div class="base-pad big" title="Rescue drone pad · medics">✚</div>' });
+    L.marker(xyToLatLng(xy.x, xy.y), { icon, interactive: false, keyboard: false, zIndexOffset: 200 }).addTo(lifterPadLayer);
+  }
+  function updateLifter(state, status, pct) {
+    lifterMarker.setLatLng(xyToLatLng(state.x, state.y));
+    const el = lifterMarker.getElement();
+    if (!el) return;
+    el.querySelector('.lifter-body').style.transform = `rotate(${state.headingDeg}deg)`;
+    el.dataset.status = status;
+    const txt = LIFTER_TXT[status];
+    el.querySelector('.lifter-state').textContent = txt ? `${txt}${pct != null ? ` ${Math.round(pct)}%` : ''}` : '';
+  }
+
+  /** launch / landing pad */
+  function setBase(xy) {
+    baseLayer.clearLayers();
+    const icon = L.divIcon({ className: 'base-wrap', iconSize: [40, 40], iconAnchor: [20, 20], html: '<div class="base-pad" title="Launch & landing base">H</div>' });
+    L.marker(xyToLatLng(xy.x, xy.y), { icon, interactive: false, keyboard: false, zIndexOffset: 200 }).addTo(baseLayer);
   }
 
   function showBearing(from, absBearingDeg, lengthM) {
@@ -237,7 +310,7 @@ export function createMap(elId, config) {
       const show = s.found || reveal;
       let m = survivorMarkers.get(s.id);
       if (!show) { if (m) { survivorLayer.removeLayer(m); survivorMarkers.delete(s.id); } continue; }
-      const cls = s.found ? 'found' : 'missed';
+      const cls = s.rescued ? 'rescued' : s.found ? 'found' : 'missed';
       if (!m || m._gemaCls !== cls) {
         if (m) survivorLayer.removeLayer(m);
         const icon = L.divIcon({
@@ -245,7 +318,7 @@ export function createMap(elId, config) {
           html: `<div class="person ${cls}"><div class="head"></div><div class="torso"></div></div>`,
         });
         m = L.marker(xyToLatLng(s.x, s.y), { icon, zIndexOffset: 500 }).addTo(survivorLayer);
-        m.bindTooltip(`${s.label || s.id} · ${s.found ? 'FOUND' : 'not found'}`, { direction: 'top' });
+        m.bindTooltip(`${s.label || s.id} · ${s.rescued ? 'RESCUED by R1' : s.found ? 'FOUND · rescue drone notified' : 'not found'}`, { direction: 'top' });
         m._gemaCls = cls;
         survivorMarkers.set(s.id, m);
       }
@@ -256,10 +329,12 @@ export function createMap(elId, config) {
     map.flyTo(xyToLatLng(xy.x, xy.y), Math.min(19, config.map.zoom + 1.5), { duration: 0.8 });
   }
 
-  function resetTrail() { trailPts = []; trail.setLatLngs([]); pinLayer.clearLayers(); }
+  function resetTrail() { for (const f of fleet.values()) { f.pts = []; f.trail.setLatLngs([]); } pinLayer.clearLayers(); }
 
   return {
-    map, buildGrid, updateGrid, setHeatmap, fitToHud, setImagery, startAreaSelect, updateDrone, showBearing, addPin, updateSurvivors, flash, resetTrail,
+    map, buildGrids, updateGrid, setHeatmap, fitToHud, setImagery, startAreaSelect, showBearing, addPin, updateSurvivors, flash, resetTrail,
+    setFleet, updateFleet, setSectors, setBase, setMission, boundsOf, setLifterPad, updateLifter,
+    onDroneClick(fn) { onDronePick = fn; },
     setFollow(on) { follow = !!on; },
     onClick(fn) { map.on('click', e => fn(latLngToXY(e.latlng), e.latlng)); },
   };

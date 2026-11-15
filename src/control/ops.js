@@ -37,7 +37,11 @@ export const OPS_STEPS = [
   },
   {
     title: 'Mark and dispatch', kind: 'video', t0: 8.3, t1: 10, thumb: 'op-flyin.jpg', tag: 'Rescue team',
-    body: 'Every confirmed person gets a GPS pin with the camera or heat image, sent straight to the ground team. The pod is winched back up and the drone moves on to the next most likely area.',
+    body: 'Every confirmed person gets a GPS pin with the camera or heat image. The rescue drone R1 and the officials (Bomba, APM, NADMA) are notified at the same moment. The pod is winched back up and the search drone moves on to the next most likely area.',
+  },
+  {
+    title: 'Rescue lift (R1)', kind: 'sim', sim: 'lift', thumbT: 10.4, tag: 'Rescue drone',
+    body: 'The big rescue drone R1 lowers a fully enclosed capsule on two ropes. The survivor sits in a padded seat with a 5-point harness and the door locks shut. R1 only lifts once every safety check passes (harness, door, rope tension, wind), then it lifts slowly and flies low to the medics before going back for the next person.',
   },
 ];
 let acc = 0;
