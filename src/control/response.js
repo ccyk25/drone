@@ -8,7 +8,7 @@
 //   5. Resume searching; the next voice starts the same sequence.
 // Moves are always bounded steps (never "fly forward forever").
 
-const STEP = { camera: 15, audio: 25 };            // metres per response step
+const STEP = { camera: 30, audio: 50 };            // metres per response step (big enough to see on the map)
 const EST_RANGE = { camera: 20, audio: 40 };        // where we guess the person is along the bearing
 const LOST_MS = 5000;                               // camera hasn't seen them for this long → heat check
 const HEAT_MS = 2500;                               // time the heat check takes
@@ -147,7 +147,6 @@ export function createResponder(env) {
     env.addFlag(p, html);
     env.flash(p);
     env.log(`✅ <b>Survivor #${flags} confirmed</b> · ${where.replace(/<[^>]+>/g, '')} · ${sensors}`, 'found');
-    env.setTarget(droneXY());                                   // hover over the spot
     setPhase('confirmed', now, `${where.replace(/<[^>]+>/g, '')}`);
   }
 
@@ -184,8 +183,10 @@ export function createResponder(env) {
     /** Returns true if handled (real sensor or simulate button). */
     onDetection(det, now) {
       const sensor = det.sensor === 'camera' ? 'camera' : 'audio';
-      if (sensor === 'audio' && Date.now() < speakingUntil) { env.log('(ignored: drone speaker echo)', 'muted'); return true; }
-      if (phase === 'confirmed') return true;                     // holding over the confirmed survivor
+      if (sensor === 'audio' && det.source !== 'sim' && Date.now() < speakingUntil) { env.log('(ignored: drone speaker echo)', 'muted'); return true; }
+      if (phase === 'confirmed') {                                // a new voice/sighting starts a new response right away
+        evidence = []; heatResult = null; lastSeen = { camera: -1e9, audio: -1e9 }; setPhase('search', now);
+      }
       // A voice answering the drone's "shout for help" confirms, even if the person moved relative to the
       // drone (the phones stay put on stage while the virtual drone turns).
       const answeredCallout = sensor === 'audio' && phase === 'listen' && evidence.length > 0;

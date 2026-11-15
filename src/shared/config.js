@@ -49,6 +49,6 @@ export const CONFIG = {
     camera: { radiusM: 40, max: 0.3,
       cover: { open: 1.0, trees: 0.4, roof: 0.0, water: 0.5 } }
   },
-  drone: { speedMps: 15, turnRateDegPerS: 90, tickMs: 100 },
+  drone: { speedMps: 15, turnRateDegPerS: 180, tickMs: 100 },   // fast turns so reactions to voices are visible on stage
   trust: { clearedAt: 0.8, uncertainAt: 0.3 }
 };
