@@ -63,14 +63,30 @@ export function createResponder(env) {
   setPhase('search', 0);
 
   // ---------- drone speaker (laptop speech) ----------
+  // Browsers load voices lazily and the first utterance is slow, so pick a voice early and
+  // warm the engine up silently on the operator's first click.
+  let voice = null;
+  const pickVoice = () => {
+    const vs = window.speechSynthesis?.getVoices?.() || [];
+    voice = vs.find(v => /^en[-_](GB|US|AU)/i.test(v.lang) && /Google|Microsoft|Samantha|Daniel|Karen/i.test(v.name))
+      || vs.find(v => /^en/i.test(v.lang)) || null;
+  };
+  if (window.speechSynthesis) {
+    pickVoice();
+    window.speechSynthesis.onvoiceschanged = pickVoice;
+    document.addEventListener('pointerdown', () => {
+      try { const w = new SpeechSynthesisUtterance(' '); w.volume = 0; window.speechSynthesis.speak(w); } catch { /* ignore */ }
+    }, { once: true, capture: true });
+  }
   function say(text) {
     env.log(`🔈 Drone speaker: "${text}"`, 'det');
     try {
       const synth = window.speechSynthesis;
       if (!synth) return;
-      synth.cancel();
+      if (synth.speaking || synth.pending) synth.cancel();
       const u = new SpeechSynthesisUtterance(text);
-      u.rate = 0.95; u.pitch = 1; u.volume = 1;
+      if (voice) u.voice = voice;
+      u.rate = 1.05; u.pitch = 1; u.volume = 1;
       speakingUntil = Date.now() + 800 + text.length * 65;           // estimate, corrected on end
       u.onend = () => { speakingUntil = Date.now() + 800; };           // ignore our own voice echoing into the mics
       synth.speak(u);
@@ -103,6 +119,7 @@ export function createResponder(env) {
   }
 
   function confirm(now) {
+    say('Help is coming. Stay where you are.');                 // speak first: no delay
     const p = personXY();
     const [lat, lng] = env.toLatLng(p.x, p.y);
     const scen = env.scenario();
@@ -129,7 +146,6 @@ export function createResponder(env) {
     env.addFlag(p, html);
     env.flash(p);
     env.log(`✅ <b>Survivor #${flags} confirmed</b> · ${where.replace(/<[^>]+>/g, '')} · ${sensors}`, 'found');
-    say('Help is coming. Stay where you are.');
     env.setTarget(droneXY());                                   // hover over the spot
     setPhase('confirmed', now, `${where.replace(/<[^>]+>/g, '')}`);
   }

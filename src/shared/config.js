@@ -22,13 +22,14 @@ export const CONFIG = {
   // DEMO sensitivity (default on the phones): a room full of people talking must not trigger it.
   // Only a LOUD, bright, sustained shout counts. 'Field' sensitivity (above, lab-validated on
   // flood recordings) is available on the phone with the Sensitivity button.
-  screamDemo: { minNoveltyDb: 18, minAboveFloorDb: 10, minLevelDb: -30, minClarity: 0.6, minVoicedMs: 450, windowMs: 900 },
+  // (tuned on the day: 'talking' measured +4 dB over the room → rejected; a real shout is well above +7)
+  screamDemo: { minNoveltyDb: 12, minAboveFloorDb: 7, minLevelDb: -38, minClarity: 0.55, minVoicedMs: 350, windowMs: 900 },
   // Muffled voice behind rubble/walls: high frequencies lost, so use the wider voice band;
   // calls are short syllables, so count voiced time within a window instead of continuous sound.
   // (A spoken "help" has only ~100–150 ms of clearly voiced sound, so two calls within 2.5 s = 200 ms.)
   muffled: { minNoveltyDb: 12, minClarity: 0.55, minPitchHz: 120, maxPitchHz: 1000,
     minVoicedMs: 200, minBursts: 2, windowMs: 2500, confidenceScale: 0.7 },
-  fusion: { windowMs: 600, sharpness: 3, staleMs: 3000, levelLookbackMs: 900 },
+  fusion: { windowMs: 400, sharpness: 3, staleMs: 3000, levelLookbackMs: 900 },
   calibration: { floorMs: 3000, clapListenMs: 4000 },
   camera: { intervalMs: 350, minScore: 0.6, confirmFrames: 2, cooldownMs: 3000, halfFovDeg: 30 },
   pod: { max: 0.9, hearingRadiusM: 150, falloffM: 60, noiseRefDb: -50, noisePenaltyPerDb: 0.03 }, // REPLACE with the measured fit

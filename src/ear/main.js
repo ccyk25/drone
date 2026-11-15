@@ -235,8 +235,9 @@ function runEar(room, ear) {
   // What the phone thinks it hears right now (helps tune on the day)
   function describeSound(f) {
     const rise = Math.max(f.noveltyBrightDb, f.noveltyVoiceDb);
+    const over = f.db - f.floorDb;
     if (rise < 6) return `background (learned) · ${f.db.toFixed(0)} dB`;
-    if (f.clarity >= 0.55 && f.pitchHz >= 120) return `voice-like · pitch ${f.pitchHz.toFixed(0)} Hz · +${rise.toFixed(0)} dB`;
+    if (f.clarity >= 0.55 && f.pitchHz >= 120) return `voice-like · ${f.pitchHz.toFixed(0)} Hz · +${over.toFixed(0)} dB over room${sens === 'demo' && over < 7 ? ' (shout louder)' : ''}`;
     return `noise burst (no pitch) · +${rise.toFixed(0)} dB`;
   }
 
