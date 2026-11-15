@@ -4,7 +4,7 @@ import { CONFIG } from '../shared/config.js';
 import { EARS, MSG } from '../shared/protocol.js';
 import { joinRoom } from '../realtime/channel.js';
 import { startMic } from './audio.js';
-import { createFloorTracker, createScreamDetector, createNoiseProfile } from './detector.js';
+import { createFloorTracker, createScreamDetector, createNoiseProfile, screamConfigFor } from './detector.js';
 import { createCalibrator } from './calibrate.js';
 import { loadDetector, startCamera, bestPerson, createSightingGate } from './camera.js';
 
@@ -46,7 +46,9 @@ function runEar(room, ear) {
   const floor = createFloorTracker({
     windowS: CONFIG.ear.floorWindowS, percentile: CONFIG.ear.floorPercentile, analysisMs: CONFIG.ear.analysisMs
   });
-  const detector = createScreamDetector(CONFIG.scream, CONFIG.muffled);
+  // sensitivity: 'demo' (default: only loud, sustained shouts) or 'field' (lab-validated, hears screams inside flood noise)
+  let sens = params.get('sens') === 'field' ? 'field' : 'demo';
+  let detector = createScreamDetector(screamConfigFor(sens), CONFIG.muffled);
   const profile = createNoiseProfile(CONFIG.noiseProfile);   // learned background spectrum
   const calibrator = createCalibrator(CONFIG.calibration);
   let mic = null;
@@ -65,6 +67,7 @@ function runEar(room, ear) {
     }
     $('startBtn').classList.add('hidden');
     $('muffledBtn').classList.remove('hidden');
+    $('sensBtn').classList.remove('hidden');
     $('sub').textContent = 'Listening…';
     await keepAwake();
     channel.send({ type: MSG.HELLO, ear, label: navigator.userAgent.slice(0, 60) });
@@ -74,6 +77,15 @@ function runEar(room, ear) {
 
   // Muffled-voice mode: also detect quiet, dull, voiced sounds (a person behind rubble).
   // OFF by default because normal talking near the phone would trigger it during the pitch.
+  const sensLabel = () => (sens === 'demo' ? '🎚 Sensitivity: DEMO · shout loudly' : '🎚 Sensitivity: FIELD · flood-tuned, very sensitive');
+  $('sensBtn').textContent = sensLabel();
+  $('sensBtn').addEventListener('click', () => {
+    const muffledOn = detector.muffledOn;
+    sens = sens === 'demo' ? 'field' : 'demo';
+    detector = createScreamDetector(screamConfigFor(sens), CONFIG.muffled, { muffled: muffledOn });
+    $('sensBtn').textContent = sensLabel();
+  });
+
   $('muffledBtn').addEventListener('click', () => {
     detector.setMuffled(!detector.muffledOn);
     $('muffledBtn').textContent = detector.muffledOn ? '🔊 Muffled-voice mode: ON' : '🔇 Muffled-voice mode: OFF';

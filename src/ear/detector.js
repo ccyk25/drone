@@ -76,7 +76,15 @@ export function screamScore({ noveltyBrightDb = 0, noveltyVoiceDb = 0, clarity =
 const inPitch = (f, cfg) => f.pitchHz >= cfg.minPitchHz && f.pitchHz <= cfg.maxPitchHz;
 
 export function isClearScream(f, cfg = CONFIG.scream) {
-  return (f.noveltyBrightDb ?? -Infinity) >= cfg.minNoveltyDb && (f.clarity ?? 0) >= cfg.minClarity && inPitch(f, cfg);
+  return (f.noveltyBrightDb ?? -Infinity) >= cfg.minNoveltyDb && (f.clarity ?? 0) >= cfg.minClarity && inPitch(f, cfg)
+    // demo sensitivity only: also loud overall, well above the room's background
+    && (cfg.minAboveFloorDb == null || f.db >= f.floorDb + cfg.minAboveFloorDb)
+    && (cfg.minLevelDb == null || f.db >= cfg.minLevelDb);
+}
+
+/** Scream settings for a sensitivity: 'demo' (default on phones) or 'field' (lab-validated). */
+export function screamConfigFor(sens = 'demo') {
+  return sens === 'field' ? CONFIG.scream : { ...CONFIG.scream, ...CONFIG.screamDemo };
 }
 
 export function isMuffledVoice(f, cfg = CONFIG.muffled) {

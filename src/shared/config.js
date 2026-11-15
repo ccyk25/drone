@@ -19,6 +19,10 @@ export const CONFIG = {
   scream: { minNoveltyDb: 10, minClarity: 0.6, minPitchHz: 150, maxPitchHz: 1600,
     minVoicedMs: 250, windowMs: 700, cooldownMs: 1500,
     minBandRatio: 0.45 /* UI score only */ },
+  // DEMO sensitivity (default on the phones): a room full of people talking must not trigger it.
+  // Only a LOUD, bright, sustained shout counts. 'Field' sensitivity (above, lab-validated on
+  // flood recordings) is available on the phone with the Sensitivity button.
+  screamDemo: { minNoveltyDb: 18, minAboveFloorDb: 10, minLevelDb: -30, minClarity: 0.6, minVoicedMs: 450, windowMs: 900 },
   // Muffled voice behind rubble/walls: high frequencies lost, so use the wider voice band;
   // calls are short syllables, so count voiced time within a window instead of continuous sound.
   // (A spoken "help" has only ~100–150 ms of clearly voiced sound, so two calls within 2.5 s = 200 ms.)

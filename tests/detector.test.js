@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { CONFIG } from '../src/shared/config.js';
-import { createScreamDetector, createFloorTracker, createNoiseProfile } from '../src/ear/detector.js';
+import { createScreamDetector, createFloorTracker, createNoiseProfile, screamConfigFor } from '../src/ear/detector.js';
 import { computeFeatures } from '../src/ear/audio.js';
 import { validate } from '../src/shared/protocol.js';
 
@@ -103,4 +103,19 @@ describe('protocol', () => {
     expect(validate({ type: 'calibration', ear: 'C', floorDb: -60, clapPeakDb: -8 })).toBe(true);
     expect(validate({ type: 'nope' })).toBe(false);
   });
+});
+
+describe('demo sensitivity (room full of people)', () => {
+  const run = (frame, sens) => {
+    const d = createScreamDetector(screamConfigFor(sens), CONFIG.muffled);
+    let n = 0;
+    for (let i = 0; i < 40; i++) if (d.update(frame, i * STEP).event) n++;
+    return n;
+  };
+  // the exact numbers from the phone screenshot that kept triggering: -30 dB level, floor -34, +11 dB, pitch 706 Hz
+  const talking = { db: -30, floorDb: -34, noveltyBrightDb: 11, noveltyVoiceDb: 11, clarity: 0.8, pitchHz: 706 };
+  const shout = { db: -14, floorDb: -34, noveltyBrightDb: 26, noveltyVoiceDb: 24, clarity: 0.9, pitchHz: 820 };
+  it('normal talking does NOT trigger in demo mode', () => expect(run(talking, 'demo')).toBe(0));
+  it('a loud sustained shout still triggers in demo mode', () => expect(run(shout, 'demo')).toBeGreaterThanOrEqual(1));
+  it('field mode stays sensitive (lab-validated)', () => expect(run(talking, 'field')).toBeGreaterThanOrEqual(1));
 });
