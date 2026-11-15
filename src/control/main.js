@@ -13,7 +13,8 @@ import { createDrone, bearingTo, wrapDeg } from './drone.js';
 import { startRotorNoise, stopRotorNoise, setRotorVolume } from './noise.js';
 import { createUI } from './ui.js';
 import { createOps } from './ops.js';
-import { createResponder } from './response.js';   // P1: camera → heat → voice → confirm → speaker + flag
+import { createResponder } from './response.js';
+import { createConnect } from './connect.js';   // P1: Connect-the-drone sheet + live Drone camera window   // P1: camera → heat → voice → confirm → speaker + flag
 
 const urlParams = new URLSearchParams(location.search);
 export const MOCKS = urlParams.has('mocks') ? urlParams.get('mocks') !== '0' : false;   // real modules have landed; ?mocks=1 to force mocks
@@ -448,6 +449,23 @@ window.addEventListener('keydown', (ev) => {
   handleDetection({ type: 'detection', sensor: 'camera', t: Date.now(), relBearingDeg: off * (CONFIG.camera?.halfFovDeg ?? 30), confidence: 0.9, ears: ['C'], source: 'sim-camera' });
 });
 
+// ---- Connect the drone (setup sheet) + Drone camera window (P1) ----
+const connect = createConnect({
+  room: ROOM,
+  earUrl: ear => new URL(`ear.html?room=${ROOM}&ear=${ear}${ear === 'C' ? '&mode=eyes' : ''}`, location.href).href,
+  onCalibrate: () => calibrate(),
+  onClose: () => document.querySelector('[data-act="qr"]')?.classList.remove('on'),
+});
+{ const st = document.createElement('style'); st.textContent = '.qrpop{display:none!important}'; document.head.appendChild(st); }
+document.addEventListener('click', (ev) => {               // "Join ears" opens the new sheet instead of the old strip
+  const b = ev.target.closest?.('[data-act="qr"]');
+  if (!b) return;
+  ev.stopImmediatePropagation(); ev.preventDefault();
+  connect.toggle(); b.classList.toggle('on', connect.isOpen());
+}, true);
+{ const setCalib = ui.setCalibStatus.bind(ui); ui.setCalibStatus = (t) => { setCalib(t); connect.setCalibStatus(t); }; }
+if (!urlParams.has('nosetup')) setTimeout(() => connect.open(), 300);   // start with the setup sheet
+
 // ---- realtime ears ----
 const fusion = FU.createFusion(CONFIG, { onDetection: det => handleDetection(det) });
 let calibPeaks = null;
@@ -456,8 +474,9 @@ const channel = CH.joinRoom(ROOM, {
     if (!validate(msg)) return;
     const e = msg.ear && (ears[msg.ear] ||= { db: null, floorDb: null, last: 0, screamUntil: 0 });
     if (msg.type === 'hello') { e.last = Date.now(); ui.log(`Ear <b>${msg.ear}</b> joined`); }
+    if (msg.type === 'frame') { e.last = Date.now(); e.frameAt = Date.now(); connect.onFrame(msg); return; }
     if (msg.type === 'level') {
-      Object.assign(e, { db: msg.db, floorDb: msg.floorDb, last: Date.now() });
+      Object.assign(e, { db: msg.db, floorDb: msg.floorDb, last: Date.now(), levelAt: Date.now() });
       if (calibPeaks) calibPeaks[msg.ear] = Math.max(calibPeaks[msg.ear] ?? -Infinity, msg.db);
     }
     if (msg.type === 'scream') {
@@ -536,6 +555,7 @@ function loop() {
   for (const k of ['L', 'C', 'R']) {
     const e = ears[k];
     ui.setEarStatus(k, e ? { connected: now - e.last < 3000, db: e.db, floorDb: e.floorDb, screaming: now < e.screamUntil } : {});
+    connect.setEar(k, e ? { joined: now - e.last < 6000, listening: now - (e.levelAt || 0) < 3000, watching: now - (e.frameAt || 0) < 3000, db: e.db, screaming: now < e.screamUntil } : {});
   }
   if (!running) return;
   const dt = CONFIG.drone.tickMs * speed;

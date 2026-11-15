@@ -35,23 +35,24 @@ export function createResponder(env) {
   // ---------- on-screen phase banner ----------
   const banner = document.createElement('div');
   banner.id = 'gema-phase';
-  banner.style.cssText = 'position:fixed;top:30vh;left:50%;transform:translateX(-50%);z-index:2000;padding:10px 18px;border-radius:14px;' +
-    'font:700 18px system-ui;color:#fff;background:rgba(15,18,24,.88);box-shadow:0 6px 24px rgba(0,0,0,.4);pointer-events:none;' +
-    'transition:background .2s;max-width:92vw;text-align:center';
+  banner.style.cssText = 'position:fixed;top:calc(var(--top,52px) + 14px);left:50%;transform:translateX(-50%);z-index:1200;' +
+    'padding:9px 16px;border-radius:12px;background:var(--card,rgba(20,22,26,.92));border:1px solid var(--line-2,rgba(255,255,255,.16));' +
+    'backdrop-filter:blur(8px);box-shadow:0 8px 24px rgba(0,0,0,.4);pointer-events:none;max-width:min(560px,92vw);text-align:center;' +
+    'font:700 14px var(--hud,monospace);letter-spacing:.12em;text-transform:uppercase;color:var(--text,#eef1f4);transition:border-color .2s,color .2s';
   (env.hud || document.body).appendChild(banner);
   const PHASES = {
-    search: ['🔍 SEARCHING', 'rgba(15,18,24,.88)'],
-    track: ['📷 PERSON IN VIEW · approaching', 'rgba(46,125,50,.92)'],
-    heat: ['🌡 HEAT CHECK · thermal (simulated)', 'rgba(230,81,0,.92)'],
-    listen: ['👂 LISTENING · shout for help!', 'rgba(21,101,192,.92)'],
-    voice: ['🔊 VOICE HEARD · turning toward it', 'rgba(21,101,192,.92)'],
-    confirmed: ['✅ PERSON CONFIRMED · help is coming', 'rgba(27,94,32,.95)']
+    search: ['🔍 Searching', 'var(--muted,#8a929c)'],
+    track: ['📷 Person in view · approaching', 'var(--green,#3be07c)'],
+    heat: ['🌡 Heat check · thermal (simulated)', 'var(--amber,#ffb020)'],
+    listen: ['👂 Listening · shout for help', 'var(--blue,#5fd0ff)'],
+    voice: ['🔊 Voice heard · turning toward it', 'var(--blue,#5fd0ff)'],
+    confirmed: ['✅ Person confirmed · help is coming', 'var(--green,#3be07c)']
   };
   function setPhase(p, now, extra = '') {
     phase = p; phaseAt = now;
     const [text, bg] = PHASES[p];
-    banner.innerHTML = text + (extra ? `<div style="font:500 13px system-ui;opacity:.9;margin-top:2px">${extra}</div>` : '');
-    banner.style.background = bg;
+    banner.innerHTML = `<span style="color:${bg}">${text}</span>` + (extra ? `<div style="font:500 12px var(--ui,system-ui);letter-spacing:0;text-transform:none;color:var(--muted,#8a929c);margin-top:3px">${extra}</div>` : '');
+    banner.style.borderColor = p === 'search' ? 'var(--line-2,rgba(255,255,255,.16))' : bg;
   }
   setPhase('search', 0);
 

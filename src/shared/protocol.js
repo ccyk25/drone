@@ -9,7 +9,8 @@ export const MSG = {
   SCREAM: 'scream',           // ear → control  { ear, t, peakDb, durationMs, confidence, kind?: 'scream'|'muffled' }
   CALIBRATE: 'calibrate',     // control → ears { phase: 'start'|'clap'|'done', gains? }
   CALIBRATION: 'calibration', // ear → control  { ear, floorDb, clapPeakDb }  (reply after the clap phase)
-  SIGHTING: 'sighting'        // ear → control  { ear, t, confidence, offset }  camera saw a person; offset -1 (left) .. +1 (right)
+  SIGHTING: 'sighting',       // ear → control  { ear, t, confidence, offset }  camera saw a person; offset -1 (left) .. +1 (right)
+  FRAME: 'frame'              // ear → control  { ear, t, jpg, box?, score? }  small live camera preview (~2/s, ~10 KB), not stored
 };
 
 export const channelName = (room) => `gema-room-${room}`;
@@ -42,6 +43,11 @@ export function validate(msg) {
           && Object.entries(msg.gains).every(([k, v]) => isEar(k) && isNum(v))));
     case MSG.CALIBRATION:
       return isEar(msg.ear) && isNum(msg.floorDb) && isNum(msg.clapPeakDb);
+    case MSG.FRAME:
+      return isEar(msg.ear) && isNum(msg.t) && typeof msg.jpg === 'string'
+        && msg.jpg.startsWith('data:image/jpeg') && msg.jpg.length <= 120000
+        && (msg.box == null || (Array.isArray(msg.box) && msg.box.length === 4 && msg.box.every(isNum)))
+        && (msg.score == null || isNum(msg.score));
     case MSG.SIGHTING:
       return isEar(msg.ear) && isNum(msg.t) && isNum(msg.confidence) && isNum(msg.offset)
         && msg.offset >= -1 && msg.offset <= 1;
