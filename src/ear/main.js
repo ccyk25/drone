@@ -68,6 +68,7 @@ function runEar(room, ear) {
     $('startBtn').classList.add('hidden');
     $('muffledBtn').classList.remove('hidden');
     $('sensBtn').classList.remove('hidden');
+    $('muteBtn').classList.remove('hidden');
     $('sub').textContent = 'Listening…';
     await keepAwake();
     channel.send({ type: MSG.HELLO, ear, label: navigator.userAgent.slice(0, 60) });
@@ -77,6 +78,14 @@ function runEar(room, ear) {
 
   // Muffled-voice mode: also detect quiet, dull, voiced sounds (a person behind rubble).
   // OFF by default because normal talking near the phone would trigger it during the pitch.
+  // Mute: the phone stays connected but sends no levels or screams (e.g. while people talk on stage)
+  let muted = false;
+  $('muteBtn').addEventListener('click', () => {
+    muted = !muted;
+    $('muteBtn').textContent = muted ? '🔇 Mic MUTED · tap to unmute' : '🎤 Mic ON · tap to mute';
+    $('muteBtn').classList.toggle('muted', muted);
+    $('sub').textContent = muted ? 'Muted: not sending anything.' : 'Listening…';
+  });
   const sensLabel = () => (sens === 'demo' ? '🎚 Sensitivity: DEMO · shout loudly' : '🎚 Sensitivity: FIELD · flood-tuned, very sensitive');
   $('sensBtn').textContent = sensLabel();
   $('sensBtn').addEventListener('click', () => {
@@ -213,14 +222,14 @@ function runEar(room, ear) {
       $('sub').textContent = `Clap heard at ${cal.clapPeakDb.toFixed(0)} dB. Sent.`;
     }
 
-    if (event) {
+    if (event && !muted) {
       channel.send({ type: MSG.SCREAM, ear, t: Date.now(), ...event });
       sent += 1;
       $('countText').textContent = `${sent} sent · last: ${event.kind === 'muffled' ? 'muffled voice' : 'scream'}`;
       flash();
     }
 
-    if (at - lastLevelSent >= 1000 / CONFIG.ear.levelHz) {
+    if (!muted && at - lastLevelSent >= 1000 / CONFIG.ear.levelHz) {
       lastLevelSent = at;
       channel.send({ type: MSG.LEVEL, ear, t: Date.now(), db, floorDb, bandRatio, screamScore: score });
     }

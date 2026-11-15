@@ -62,6 +62,7 @@
         font:600 14px var(--hud); letter-spacing:.12em; text-transform:uppercase; display:flex; align-items:center; justify-content:center; gap:8px; }
       .btn.primary { background:#fff; color:#000; border-color:#fff; padding:18px; font-size:16px; }
       .btn:active { transform:translateY(1px); }
+      .btn.muted { background:var(--red); color:#fff; border-color:var(--red); }
 
       /* join screen */
       .pick { display:grid; gap:12px; background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px; }
@@ -127,6 +128,7 @@
         <div class="hearing">Hearing: <b id="sound">–</b></div>
       </div>
       <button id="startBtn" class="btn primary">Start listening</button>
+      <button id="muteBtn" class="btn hidden">🎤 Mic ON · tap to mute</button>
       <button id="sensBtn" class="btn hidden">🎚 Sensitivity: DEMO · shout loudly</button>
       <button id="muffledBtn" class="btn hidden">🔇 Muffled-voice mode: OFF</button>
       <div id="eyeBox" class="eye hidden">
