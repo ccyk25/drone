@@ -43,8 +43,9 @@
       .eyebig.person { background:rgba(46,204,113,.9); color:#06150c; }
       .eye img.src { width:100%; display:block; }
       /* Eyes mode (ear.html?...&mode=eyes): full-screen camera for the "point the phone at someone" demo */
-      body.eyes-mode #earBox, body.eyes-mode .bars, body.eyes-mode #muffledBtn, body.eyes-mode .bars + .label { display:none !important; }
-      body.eyes-mode .eye { flex:1; min-height:60vh; }
+      /* keep the level + scream bars visible (same phone listens too); only the big letter is hidden */
+      body.eyes-mode #earBox { display:none !important; }
+      body.eyes-mode .eye { flex:1; min-height:50vh; }
       body.eyes-mode .eye video, body.eyes-mode .eye img.src { height:100%; object-fit:cover; }
     </style>
   </head>
