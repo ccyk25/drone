@@ -47,6 +47,7 @@ export function createMap(elId, config) {
   setOrigin(config.map.center);
   const map = L.map(elId, { zoomControl: true, attributionControl: true, zoomSnap: 0.25 })
     .setView(config.map.center, config.map.zoom);
+  const el = map.getContainer();
 
   const esri = L.tileLayer(
     'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
@@ -58,6 +59,7 @@ export function createMap(elId, config) {
   L.control.layers({ 'Satellite (Esri)': esri, 'OpenStreetMap': osm }, {}, { position: 'topleft' }).addTo(map);
   L.control.scale({ imperial: false, position: 'bottomleft' }).addTo(map);
 
+  const hazardLayer = L.layerGroup().addTo(map);
   const gridLayer = L.layerGroup().addTo(map);
   const trailLayer = L.layerGroup().addTo(map);
   const pinLayer = L.layerGroup().addTo(map);
@@ -96,6 +98,44 @@ export function createMap(elId, config) {
   }
 
   function setHeatmap(on) { heatmap = !!on; }
+
+  /** Fit bounds into the part of the map not covered by the HUD panels. */
+  function fitToHud(bounds) {
+    const css = getComputedStyle(document.documentElement);
+    const px = name => parseFloat(css.getPropertyValue(name)) || 0;
+    const wide = window.innerWidth > 900;
+    const rail = $px('.rail'), feed = $px('.feed'), dock = $px('.dock');
+    function $px(sel) { const n = document.querySelector(sel); return n ? n.getBoundingClientRect() : null; }
+    const top = px('--top') + 16 + (!wide && feed ? feed.height + 8 : 0);
+    const left = wide && rail ? rail.right + 16 : 16;
+    const right = wide && feed ? window.innerWidth - feed.left + 16 : 16;
+    const bottom = dock ? window.innerHeight - dock.top + 16 : 16;
+    map.fitBounds(bounds, { paddingTopLeft: [left, top], paddingBottomRight: [right, bottom] });
+  }
+
+  /** Scenario: tint the imagery and draw hazard zones. hazards: [{kind:'water'|'rubble', x, y, r, label}] */
+  function setScenario(id, hazards = []) {
+    el.classList.remove('scn-flood', 'scn-collapse');
+    el.classList.add(`scn-${id}`);
+    hazardLayer.clearLayers();
+    for (const h of hazards) {
+      const ll = xyToLatLng(h.x, h.y);
+      const style = h.kind === 'water'
+        ? { color: '#6cc0ff', weight: 1, opacity: 0.35, fillColor: '#1d6fd0', fillOpacity: 0.2 }
+        : { color: '#e09a55', weight: 2, dashArray: '4 5', fillColor: '#6b4424', fillOpacity: 0.55 };
+      const c = L.circle(ll, { radius: h.r, interactive: h.kind !== 'water', ...style }).addTo(hazardLayer);
+      if (h.kind === 'rubble') {
+        c.bindTooltip(`🏚️ ${h.label || 'Collapsed structure'}`, { direction: 'top' });
+        // debris fragments so it reads as rubble from above
+        for (let k = 0; k < 7; k++) {
+          const a = (k / 7) * Math.PI * 2 + h.x, d = h.r * (0.25 + 0.5 * ((k * 37 + Math.abs(h.y)) % 10) / 10);
+          const cx = h.x + Math.cos(a) * d, cy = h.y + Math.sin(a) * d, s = 3 + (k % 3) * 2.5;
+          L.polygon([xyToLatLng(cx - s, cy - s * 0.6), xyToLatLng(cx + s, cy - s * 0.2), xyToLatLng(cx + s * 0.4, cy + s), xyToLatLng(cx - s * 0.8, cy + s * 0.5)],
+            { color: '#c9b49a', weight: 1, fillColor: '#8a7a68', fillOpacity: 0.85, interactive: false }).addTo(hazardLayer);
+        }
+      }
+    }
+  }
 
   // ---- drone sprite ----
   const droneIcon = L.divIcon({
@@ -185,7 +225,7 @@ export function createMap(elId, config) {
   function resetTrail() { trailPts = []; trail.setLatLngs([]); pinLayer.clearLayers(); }
 
   return {
-    map, buildGrid, updateGrid, setHeatmap, updateDrone, showBearing, addPin, updateSurvivors, flash, resetTrail,
+    map, buildGrid, updateGrid, setHeatmap, fitToHud, setScenario, updateDrone, showBearing, addPin, updateSurvivors, flash, resetTrail,
     setFollow(on) { follow = !!on; },
     onClick(fn) { map.on('click', e => fn(latLngToXY(e.latlng), e.latlng)); },
   };

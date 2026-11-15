@@ -48,7 +48,54 @@ const FALLBACK_CONFIG = {
   drone: { speedMps: 15, turnRateDegPerS: 90, tickMs: 100 },
   trust: { clearedAt: 0.8, uncertainAt: 0.3 },
 };
-const CONFIG = realConfig?.CONFIG || realConfig?.default || FALLBACK_CONFIG;
+const BASE_CONFIG = realConfig?.CONFIG || realConfig?.default || FALLBACK_CONFIG;
+
+// ---- disaster scenarios (P2 sim layer): survivors, hazard overlay, acoustic tweaks ----
+// Offsets (dx, dy) are metres from the grid centre. Overrides are applied to a COPY of the shared config.
+const SCENARIOS = {
+  flood: {
+    ambientDb: -54,                 // rain + moving water when no phone reports a floor
+    pod: { hearingRadiusM: 150 },   // voices carry over open water
+    survivors: [
+      { id: 'f1', label: 'Pak Ali (rooftop)', dx: -210, dy: 120 },
+      { id: 'f2', label: 'Mak Siti (attic window)', dx: 160, dy: 140 },
+      { id: 'f3', label: 'Child on car roof', dx: 240, dy: -150 },
+      { id: 'f4', label: 'Elderly man (2nd floor)', dx: -60, dy: -170 },
+      { id: 'f5', label: 'Teen on water tank', dx: 40, dy: 30 },
+    ],
+    hazards: [
+      { kind: 'water', dx: -140, dy: 40, r: 190 }, { kind: 'water', dx: 150, dy: -70, r: 200 },
+      { kind: 'water', dx: 60, dy: 150, r: 130 }, { kind: 'water', dx: -40, dy: -160, r: 110 },
+    ],
+  },
+  collapse: {
+    ambientDb: -62,                                      // streets go quiet after the shaking
+    pod: { hearingRadiusM: 100, max: 0.85, falloffM: 35 }, // debris muffles trapped voices: only close passes can clear a cell
+    survivors: [
+      { id: 'c1', label: 'Shopkeeper under slab', dx: -180, dy: 90 },
+      { id: 'c2', label: 'Mother & baby (stairwell void)', dx: 120, dy: 160 },
+      { id: 'c3', label: 'Student in collapsed classroom', dx: 220, dy: -120 },
+      { id: 'c4', label: 'Elderly woman (kitchen void)', dx: -90, dy: -150 },
+      { id: 'c5', label: 'Worker pinned by beam', dx: 30, dy: 20 },
+    ],
+    hazards: [
+      { kind: 'rubble', dx: -180, dy: 90, r: 45, label: 'Shophouse row collapsed' },
+      { kind: 'rubble', dx: 120, dy: 160, r: 50, label: 'Apartment block, partial collapse' },
+      { kind: 'rubble', dx: 220, dy: -120, r: 55, label: 'School wing collapsed' },
+      { kind: 'rubble', dx: -90, dy: -150, r: 40, label: 'Terrace house pancaked' },
+      { kind: 'rubble', dx: 30, dy: 20, r: 35, label: 'Warehouse roof down' },
+      { kind: 'rubble', dx: -10, dy: -60, r: 30, label: 'Debris field' },
+    ],
+  },
+};
+let scenarioId = SCENARIOS[urlParams.get('scenario')] ? urlParams.get('scenario') : 'flood';
+const withScenario = id => {
+  const c = JSON.parse(JSON.stringify(BASE_CONFIG));
+  Object.assign(c.pod, SCENARIOS[id].pod);
+  return c;
+};
+let CONFIG = withScenario(scenarioId);
+const ALTITUDE_M = 60;   // simulated flight altitude, display only
 
 // =============================================================================================
 // MOCKS: tiny stand-ins, same interfaces as HANDOVER §8.3. Delete once the real modules land.
@@ -160,15 +207,6 @@ mock.computeGains = peaks => { // dB to add to each ear so all read the clap equ
   return Object.fromEntries(Object.entries(peaks).map(([e, v]) => [e, +(ref - v).toFixed(1)]));
 };
 
-// survivor positions relative to the grid centre (metres); ground truth for the people layer only
-mock.SURVIVORS = [
-  { id: 's1', label: 'Pak Ali (rooftop)', dx: -210, dy: 120 },
-  { id: 's2', label: 'Mak Siti (attic)', dx: 160, dy: 140 },
-  { id: 's3', label: 'Child on car roof', dx: 240, dy: -150 },
-  { id: 's4', label: 'Elderly man', dx: -60, dy: -170 },
-  { id: 's5', label: 'Teen with dead phone', dx: 40, dy: 30 },
-];
-
 // ---- pick real vs mock ----
 const pickFns = (real, mk, names) => {
   if (MOCKS || !real) return mk;
@@ -194,11 +232,26 @@ function probs() {
   const arr = g.p || g.probs || g.prob || (g.cells && g.cells.map(c => c.p));
   return arr ? Array.from(arr) : new Array(N).fill(1 / N);
 }
+const recent = [];          // last few cells visited, so the drone can't park on one cell forever
 function waypointXY(xy) {
-  const w = S.nextWaypoint(grid, xy);
-  if (typeof w === 'number') return { i: w, ...center(w) };
-  if (w && typeof w.i === 'number') return { i: w.i, ...center(w.i) };
-  return w ? { i: -1, ...toXY(w) } : null;
+  const raw = S.nextWaypoint(grid, xy);
+  let w = typeof raw === 'number' ? { i: raw, ...center(raw) }
+    : raw && typeof raw.i === 'number' ? { i: raw.i, ...center(raw.i) }
+    : raw ? { i: -1, ...toXY(raw) } : null;
+  // planner picked where we already are (or just were): take the best other cell instead
+  if (!w || Math.hypot(w.x - xy.x, w.y - xy.y) < 10 || recent.includes(w.i)) {
+    const p = probs();
+    let best = -1, bs = -1;
+    for (let i = 0; i < N; i++) {
+      const c = center(i), d = Math.hypot(c.x - xy.x, c.y - xy.y);
+      if (d < 10 || recent.includes(i)) continue;
+      const s = p[i] / (1 + d / 300);
+      if (s > bs) { bs = s; best = i; }
+    }
+    if (best >= 0) w = { i: best, ...center(best) };
+  }
+  if (w && w.i >= 0) { recent.push(w.i); if (recent.length > 4) recent.shift(); }
+  return w;
 }
 
 // =============================================================================================
@@ -208,8 +261,9 @@ const ROOM = (urlParams.get('room') || Array.from({ length: 4 }, () => 'ABCDEFGH
 if (!urlParams.get('room')) { urlParams.set('room', ROOM); history.replaceState(null, '', `${location.pathname}?${urlParams}`); }
 
 const view = createMap('map', CONFIG);
-const ui = createUI(document.getElementById('side'), {
+const ui = createUI(document.getElementById('hud'), {
   room: ROOM,
+  scenario: scenarioId,
   earUrl: ear => new URL(`ear.html?room=${ROOM}&ear=${ear}`, location.href).href,
   handlers: {
     onStart: () => { running = !running; ui.setStarted(running); if (running && t0Sim == null) t0Sim = simMs; ui.log(running ? 'Search started' : 'Paused'); },
@@ -221,6 +275,7 @@ const ui = createUI(document.getElementById('side'), {
     onRotor: on => {
       rotorOn = on;
       on ? startRotorNoise() : stopRotorNoise();
+      redrawGrid();
       ui.log(on ? 'Rotor noise <b>ON</b>: silence now proves less' : 'Rotor noise OFF', on ? 'warn' : '');
     },
     onVolume: v => setRotorVolume(v),
@@ -230,6 +285,14 @@ const ui = createUI(document.getElementById('side'), {
     onSpeed: x => { speed = x; },
     onFamilyMode: on => { familyMode = on; if (on) ui.log('Click the map where the person was last seen'); },
     onCalibrate: () => calibrate(),
+    onScenario: id => {
+      scenarioId = id;
+      CONFIG = withScenario(id);
+      urlParams.set('scenario', id); history.replaceState(null, '', `${location.pathname}?${urlParams}`);
+      ui.setScenario(id);
+      reset();
+      ui.log(`Scenario: <b>${id === 'flood' ? 'Flood' : 'Collapsed buildings'}</b> · hearing radius ${CONFIG.pod.hearingRadiusM} m`, 'warn');
+    },
   },
 });
 
@@ -246,11 +309,12 @@ function reset() {
   const [lat0, lng0] = CONFIG.map.center;
   setOrigin([lat0 - my / 111320, lng0 - mx / (111320 * Math.cos(lat0 * Math.PI / 180))]);
   const bounds = view.buildGrid(cs, CONFIG.grid.cellMeters);
-  view.map.fitBounds(bounds, { padding: [20, 20] });
+  view.fitToHud(bounds);
+  view.setScenario(scenarioId, SCENARIOS[scenarioId].hazards.map(h => ({ ...h, x: mx + h.dx, y: my + h.dy })));
   const minY = Math.min(...cs.map(c => c.y));
   drone = createDrone(CONFIG, { x: mx, y: minY - CONFIG.grid.cellMeters, headingDeg: 0 });
-  current = null;
-  survivors = (scenarioList || mock.SURVIVORS).map((s, k) => {
+  current = null; recent.length = 0;
+  survivors =(scenarioList || SCENARIOS[scenarioId].survivors).map((s, k) => {
     const xy = s.lat != null ? latLngToXY([s.lat, s.lng]) : s.dx != null ? { x: mx + s.dx, y: my + s.dy } : { x: s.x, y: s.y };
     return { id: s.id || `s${k + 1}`, label: s.label || s.name || `Survivor ${k + 1}`, ...xy, found: false };
   });
@@ -267,7 +331,7 @@ function currentNoiseDb() {
   const now = Date.now();
   const live = Object.values(ears).filter(e => now - e.last < 3000 && e.floorDb != null);
   if (live.length) return live.reduce((a, e) => a + e.floorDb, 0) / live.length;
-  return rotorOn ? -35 : -60;
+  return rotorOn ? -35 : SCENARIOS[scenarioId].ambientDb;
 }
 
 // ---- detections ----
@@ -364,8 +428,17 @@ function redrawGrid() {
     noiseDb: currentNoiseDb(),
   });
 }
-function redrawDrone() {
-  view.updateDrone(drone.state, drone.target, CONFIG.pod.hearingRadiusM, currentNoiseDb() > CONFIG.pod.noiseRefDb);
+let lastPos = null, speedKmh = 0;
+function redrawDrone(dtSimMs = 0) {
+  const st = drone.state;
+  view.updateDrone(st, drone.target, CONFIG.pod.hearingRadiusM, currentNoiseDb() > CONFIG.pod.noiseRefDb);
+  if (dtSimMs > 0 && lastPos) {
+    const v = Math.hypot(st.x - lastPos.x, st.y - lastPos.y) / (dtSimMs / 1000) * 3.6;
+    speedKmh += (v - speedKmh) * 0.3;
+  } else if (!running) speedKmh = 0;
+  lastPos = { x: st.x, y: st.y };
+  const [lat, lng] = xyToLatLng(st.x, st.y);
+  ui.setTelemetry({ lat, lng, altM: ALTITUDE_M, speedKmh, headingDeg: st.headingDeg, mode: running ? st.mode : 'idle' });
 }
 
 // family report click
@@ -421,11 +494,11 @@ function loop() {
   }
 
   // 4. redraw
-  redrawDrone();
+  redrawDrone(dt);
   gridRedrawAcc += CONFIG.drone.tickMs;
   if (gridRedrawAcc >= 250) { gridRedrawAcc = 0; redrawGrid(); }
 }
 
 reset();
 setInterval(loop, CONFIG.drone.tickMs);
-window.GEMA = { CONFIG, get grid() { return grid; }, get drone() { return drone; }, survivors: () => survivors, handleDetection, MOCKS, ROOM };
+window.GEMA = { get CONFIG() { return CONFIG; }, get scenario() { return scenarioId; },get grid() { return grid; }, get drone() { return drone; }, survivors: () => survivors, handleDetection, MOCKS, ROOM };
