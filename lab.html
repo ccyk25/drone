@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GEMA · Hearing lab</title>
+    <style>
+      body { margin:0; padding:16px; background:#0b0f14; color:#e8eef5; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+      h1 { font-size:22px; margin:0 0 6px; } p { color:#8a96a3; font-size:14px; max-width:900px; }
+      button { font:inherit; font-weight:600; padding:10px 14px; border:0; border-radius:10px; background:#7c5cff; color:#fff; cursor:pointer; margin:4px 4px 4px 0; }
+      button.ghost { background:#1b2430; }
+      table { border-collapse:collapse; width:100%; margin-top:14px; font-size:13px; }
+      th, td { text-align:left; padding:8px; border-bottom:1px solid #1b2430; vertical-align:top; }
+      th { color:#8a96a3; font-weight:600; }
+      tr.bad td { background:rgba(255,77,79,.08); }
+      #status { margin-left:8px; color:#8a96a3; }
+      .wrap { overflow-x:auto; }
+    </style>
+  </head>
+  <body>
+    <h1>GEMA hearing lab</h1>
+    <p>This runs the <b>same detector the phones use</b> on real recordings: a flooded river, heavy rain, real screams, and a spoken "help" muffled as if through rubble (low-pass filtered to 600 Hz). Each scenario starts with 5 seconds of background so the noise floor adapts, exactly like a phone would. Recordings: Wikimedia Commons, credited in /sounds/ATTRIBUTION.md.</p>
+    <button id="run">Run all scenarios</button><span id="status"></span>
+    <div>
+      <button class="ghost" data-play="flood-river.flac">▶ flood-river.flac</button>
+      <button class="ghost" data-play="rain-heavy.ogg">▶ rain-heavy.ogg</button>
+      <button class="ghost" data-play="scream-c.wav">▶ scream-c.wav</button>
+      <button class="ghost" data-play="voice-help.ogg">▶ voice-help.ogg</button>
+    </div>
+    <div class="wrap" id="out"></div>
+    <script type="module" src="/src/lab/main.js"></script>
+  </body>
+</html>

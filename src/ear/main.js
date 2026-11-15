@@ -4,7 +4,7 @@ import { CONFIG } from '../shared/config.js';
 import { EARS, MSG } from '../shared/protocol.js';
 import { joinRoom } from '../realtime/channel.js';
 import { startMic } from './audio.js';
-import { createFloorTracker, createScreamDetector } from './detector.js';
+import { createFloorTracker, createScreamDetector, createNoiseProfile } from './detector.js';
 import { createCalibrator } from './calibrate.js';
 import { loadDetector, startCamera, bestPerson, createSightingGate } from './camera.js';
 
@@ -43,7 +43,8 @@ function runEar(room, ear) {
   const floor = createFloorTracker({
     windowS: CONFIG.ear.floorWindowS, percentile: CONFIG.ear.floorPercentile, analysisMs: CONFIG.ear.analysisMs
   });
-  const detector = createScreamDetector(CONFIG.scream);
+  const detector = createScreamDetector(CONFIG.scream, CONFIG.muffled);
+  const profile = createNoiseProfile(CONFIG.noiseProfile);   // learned background spectrum
   const calibrator = createCalibrator(CONFIG.calibration);
   let mic = null;
   let sent = 0;
@@ -134,7 +135,9 @@ function runEar(room, ear) {
     const features = mic.read();
     const { db, bandRatio } = features;
     const floorDb = floor.push(db);
-    const { score, event } = detector.update({ ...features, floorDb }, at);
+    const novelty = profile.update(features.freqDb, features.binHz);
+    const frame = { ...features, ...novelty, floorDb };
+    const { score, event } = detector.update(frame, at);
 
     const cal = calibrator.update(db, at);
     if (cal?.done === 'floor') $('sub').textContent = `Noise floor ${cal.floorDb.toFixed(0)} dB. Waiting for the clap…`;
@@ -159,15 +162,15 @@ function runEar(room, ear) {
       channel.send({ type: MSG.HELLO, ear });
     }
     render(db, floorDb, score);
-    $('sound').textContent = describeSound(features, floorDb);
+    $('sound').textContent = describeSound(frame);
   }
 
   // What the phone thinks it hears right now (helps tune on the day)
-  function describeSound(f, floorDb) {
-    if (f.db < floorDb + 6) return 'quiet';
-    if (f.flatness > 0.5 && f.clarity < 0.5) return 'noise (water / rain / wind / rotor)';
-    if (f.clarity >= 0.6) return `voice-like · pitch ${f.pitchHz.toFixed(0)} Hz`;
-    return 'sound';
+  function describeSound(f) {
+    const rise = Math.max(f.noveltyBrightDb, f.noveltyVoiceDb);
+    if (rise < 6) return `background (learned) · ${f.db.toFixed(0)} dB`;
+    if (f.clarity >= 0.55 && f.pitchHz >= 120) return `voice-like · pitch ${f.pitchHz.toFixed(0)} Hz · +${rise.toFixed(0)} dB`;
+    return `noise burst (no pitch) · +${rise.toFixed(0)} dB`;
   }
 
   function onMessage(msg) {

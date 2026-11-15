@@ -512,3 +512,47 @@ Judges and mentors **will** ask: *"Why not thermal or lidar? Won't noise ruin a 
 - *"Flood noise is broadband. Voices have pitch. GEMA hears the difference, and when it can't, it says so."*
 - *"Muffled voices lose their brightness but keep their rhythm. We listen for the rhythm."*
 - *"We don't fly into rubble. We listen from above, and lower a caged ear only where the map says someone is probably there."*
+
+---
+
+## 16. Hearing lab results and gap audit (13.10)
+
+### Hearing validated on REAL recordings: `/lab.html`, 16/16 pass
+
+The recordings are a flooded river, heavy rain, a summer downpour, two real screams, and a spoken "help" muffled through simulated rubble (low-pass filtered to 600 Hz). All come from Wikimedia Commons; credits are in `public/sounds/ATTRIBUTION.md`.
+
+| Scenario | Result |
+|---|---|
+| River / heavy rain / downpour / river+rain, loud, no person | **No false alarms** |
+| Scream over flooded river at +6, 0, **−6 dB** (quieter than the flood) | **Detected** |
+| Scream over heavy rain at 0 dB | **Detected** |
+| Muffled "help" ×3, quiet room / over river +6 dB / over river 0 dB / over heavy rain +6 dB | **Detected** (as muffled) |
+| **Limits (honest):** scream 12 dB *below* the flood; muffled call through *heavy rain* at 0 dB | Not detected. This is exactly what the trust map's "NOT CLEARED" exists for |
+
+**What changed, and why (both lessons came from real data):**
+1. Real flood and rain noise is *not* spectrally flat, so the flatness idea failed. The phone now **learns the background spectrum** and measures sound rising **above it** in the scream band (1–4 kHz) and the voice band (250–3500 Hz).
+2. A loud flood raises the overall floor, so "15 dB above the floor" missed screams. A band-by-band rise fixed it.
+3. Everything human must have a **pitch**. Water and rain never exceed a pitch clarity of about 0.45; real screams reach 0.9–1.0. Pre-emphasis stops the river's rumble from looking pitched.
+4. Muffled calls are short syllables, so the detector counts voiced time and needs **at least 2 separate calls**. A single gurgle in the river recording used to trigger it; survivors call repeatedly.
+
+**For P3's POD curve:** the lab is real calibration data. Detection is reliable from **−6 dB SNR upward** and fails around **−12 dB**. Use the phones' measured noise floor to estimate SNR, then map: SNR ≥ 0 → POD high; −6 → medium; ≤ −12 → near 0.
+
+### Gap audit against the problem statement
+
+> *Problem: drone teams search blind, and "no detection" gets treated as "clear," so survivors in noisy or poorly scanned areas are missed.*
+
+| What the problem statement needs | Status | Owner |
+|---|---|---|
+| Hear survivors through flood noise | ✅ Built, validated on real recordings (limits above) | P1 |
+| Hear muffled survivors | ✅ Built, validated (mode toggle) | P1 |
+| Direction to the survivor (turn the drone) | ✅ Built: fusion and bearing (unit-tested; **not yet tested on real phones**) | P1 |
+| Camera "eyes" as a second sensor | ✅ Built (**not yet tested on a real phone**) | P1 |
+| **Trust map: POD, the "NOT CLEARED" cells, the Bayesian update**. This *is* the problem statement | ❌ **Not built.** `search.js` is still a stub | **P3** |
+| **Control screen: map, drone flying and turning, pins** | ❌ **Not built.** `map.js`, `drone.js` and `main.js` are still stubs | **P2** |
+| "Where to look next" (next waypoint) | ❌ Not built | P3 |
+| Family "last seen here" reports | ❌ Not built | P2/P3 |
+| Simulation evidence (GEMA vs grid search) | ❌ Not built | P3 |
+| Real-phone test with 2–3 phones | ❌ Not done | P1 + team |
+| Turn off Vercel auto-deploy before 2.55pm | ❌ Pending | Vercel account owner |
+
+**Bottom line:** the sensing works. **The part that answers the problem statement (the trust map on a screen) does not exist yet.** It must be running by about 2.00pm to record the video.

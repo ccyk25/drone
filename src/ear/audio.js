@@ -11,19 +11,19 @@
 import { CONFIG } from '../shared/config.js';
 
 /** Normalised autocorrelation peak in the voice range → { clarity, pitchHz }. */
-export function voicing(timeData, sampleRate, minHz = 120, maxHz = 1000) {
+export function voicing(timeData, sampleRate, minHz = 120, maxHz = 1600) {
   const n = timeData.length;
   const minLag = Math.max(2, Math.floor(sampleRate / maxHz));
   const maxLag = Math.min(n - 2, Math.ceil(sampleRate / minHz));
-  // remove DC so a constant offset can't look "periodic"
-  let mean = 0;
-  for (let i = 0; i < n; i++) mean += timeData[i];
-  mean /= n;
+  // Pre-emphasis (first difference) whitens low-frequency rumble. Without it, a flooded
+  // river's deep roar looks "periodic" to autocorrelation (tested on a real recording).
+  const x = new Float32Array(n);
+  for (let i = 1; i < n; i++) x[i] = timeData[i] - 0.97 * timeData[i - 1];
   let best = 0, bestLag = 0;
   for (let lag = minLag; lag <= maxLag; lag++) {
     let xy = 0, xx = 0, yy = 0;
-    for (let i = 0; i + lag < n; i++) {
-      const a = timeData[i] - mean, b = timeData[i + lag] - mean;
+    for (let i = 1; i + lag < n; i++) {
+      const a = x[i], b = x[i + lag];
       xy += a * b; xx += a * a; yy += b * b;
     }
     const r = xx > 0 && yy > 0 ? xy / Math.sqrt(xx * yy) : 0;
@@ -55,7 +55,8 @@ export function computeFeatures(timeData, freqDb, sampleRate, fftSize, audioCfg 
   const flatness = count && total > 0 ? Math.min(1, Math.exp(logSum / count) / (total / count)) : 1;
 
   const v = withVoicing ? voicing(timeData, sampleRate) : { clarity: 0, pitchHz: 0 };
-  return { db, bandRatio, flatness, clarity: v.clarity, pitchHz: v.pitchHz };
+  // freqDb is passed through (not sent over the network) so the noise profile can use it.
+  return { db, bandRatio, flatness, clarity: v.clarity, pitchHz: v.pitchHz, freqDb, binHz };
 }
 
 /**

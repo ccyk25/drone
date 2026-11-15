@@ -29,7 +29,8 @@ export default defineConfig(({ command, mode }) => {
         input: {
           main: `${root}index.html`,
           ear: `${root}ear.html`,
-          debug: `${root}debug.html`
+          debug: `${root}debug.html`,
+          lab: `${root}lab.html`
         }
       }
     },
