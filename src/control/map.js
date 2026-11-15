@@ -190,7 +190,7 @@ export function createMap(elId, config) {
     fleetLayer.clearLayers(); trailLayer.clearLayers(); fleet.clear();
     for (const d of list) {
       const icon = L.divIcon({
-        className: 'drone-icon swarm', iconSize: [56, 56], iconAnchor: [28, 28],
+        className: 'drone-icon drone-sw', iconSize: [56, 56], iconAnchor: [28, 28],
         html: `<div class="drone-body" style="--dc:${d.color}"><div class="drone-shadow"></div>
           <div class="arm a1"></div><div class="arm a2"></div>
           <div class="rotor r1"></div><div class="rotor r2"></div><div class="rotor r3"></div><div class="rotor r4"></div>
