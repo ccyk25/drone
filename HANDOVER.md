@@ -599,3 +599,46 @@ const ears = connectEars({
 ```
 
 It's tested: a simulated scream near L gives a direction below −20°, and a sighting gives a camera detection.
+
+---
+
+## 18. Trust-map engine and thermal: BUILT (13.05)
+
+The trust map is built in `src/control/search.js`, with 42 tests passing. **P2 wires it to the map.**
+
+```js
+import { CONFIG } from '../shared/config.js';
+import { COVER } from '../shared/cover.js';            // 12×8 cover map: roof / open / trees / water (edit to match the real area)
+import * as S from './search.js';
+import { simulateThermal, simulateCallouts } from './sensorsSim.js';
+
+const grid = S.createGrid(CONFIG, COVER);
+// every tick (dtS = 0.1 for a 100 ms loop):
+S.applyNegativeScan(grid, droneXY, {
+  audio:   { noiseDb: ears.noiseFloorDb() ?? -50 },   // real phones (Rotor noise ON raises this → cells stay amber)
+  thermal: { hotDay: false },                          // SIMULATED thermal; drop this line to show "ears only"
+}, CONFIG, 0.1);
+// real phone detection (from connectEars):  S.applyDetection(grid, droneXY, drone.headingDeg + d.relBearingDeg, d.confidence)
+// thermal hotspot (simulated):               for (const h of simulateThermal(grid, droneXY, survivorsXY, { dtS: 0.1 })) S.applyPointDetection(grid, h.xy, h.confidence)
+// family report click:                       S.applyFamilyReport(grid, S.cellAt(grid, x, y))
+// where to fly next:                          S.cellCenter(grid, S.nextWaypoint(grid, droneXY))
+// colour each cell:                           S.trustClass(grid, i)  → 'cleared' green · 'uncertain' amber · 'unsearched' grey
+// metric:                                     S.clearedPercent(grid)
+```
+
+- **Coordinates:** metres from the grid centre (x = east, y = north). Bearings are degrees clockwise from north, the same as the drone's heading. Convert lat/lng ↔ metres in `map.js`.
+- **Thermal is SIMULATED.** We have no thermal camera; label it on screen. It can't see under roofs (POD 0.03), is weak over water (0.1) and under trees (0.35), and is halved on hot afternoons. Ears hear under roofs at 0.75.
+- **People layer:** convert `SURVIVORS` to `{ id, x, y }` and pass them to `simulateThermal` / `simulateCallouts`. Those give believable detections for the "Reveal ground truth" finale.
+- **Real hardware next step:** a low-cost thermal array sensor (for example MLX90640, 32×24 pixels) or a FLIR Lepton on the drone pod.
+
+### Simulation evidence (`/lab.html` → "Search simulation"; 200 runs per strategy, 3.6 s in the browser)
+
+| Strategy | Survivors found | First find (median) |
+|---|---|---|
+| Thermal drone, standard grid | **74%** | 105 s |
+| Ears + thermal, standard grid | **99%** | 51 s |
+| **GEMA: ears + thermal, trust-map guided** | **99.9%** | **31 s** (3× faster than thermal alone) |
+
+- **Thermal alone:** 100% of the survivors it missed were in areas it **flew over**, so a naive map would call them "searched." **GEMA's trust map flagged 94% of those as NOT CLEARED.**
+- **Honest framing:** these are *model* results. They depend on our stated assumptions (where survivors are, how often they call, sensor PODs), not on field data. The audio side matches the hearing lab; the thermal blind spots match published limits.
+- **Slide line:** *"Adding ears finds 99% instead of 74%. Guiding by the trust map finds the first survivor 3× faster. And when it misses someone, it tells you where."*
