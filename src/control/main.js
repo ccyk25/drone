@@ -494,6 +494,7 @@ function setDroneArea(d, bounds) {
   }
   d.area = makeArea(b);
   d.recent.length = 0;
+  if (fleet.length === 1) { placeSurvivors(d.area.bounds); ui.log('Simulated survivors placed inside the new search area', 'muted'); }
   if (d.status === 'active' && d.drone.state.mode !== 'investigate') { d.current = null; d.drone.setTarget(null); }
   rebuildGrids(); redrawGrid();
   const { cols, rows, cellMeters } = d.area.cfg.grid;
@@ -530,6 +531,22 @@ function pushSwarmUi() {
   ui.setSwarm(fleet.map(d => ({
     id: d.id, color: d.color, status: d.status, label: statusText(d), clearedPct: d.clearedPct || 0,
   })), selId, { hold: s.status === 'hold', grounded: s.status === 'landed' || s.status === 'rtb' }, lifterUi());
+}
+
+// ---- survivors live inside the area being searched; drones only detect inside their own area ----
+function placeSurvivors(b) {                       // b = { x0, y0, x1, y1 } local metres
+  const w = b.x1 - b.x0, h = b.y1 - b.y0, cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2;
+  survivors = (scenarioList || SCENARIOS[scenarioId].survivors).map((s, k) => {
+    const xy = s.lat != null ? latLngToXY([s.lat, s.lng]) : s.fx != null ? { x: cx + s.fx * w, y: cy + s.fy * h }
+      : s.dx != null ? { x: cx + s.dx, y: cy + s.dy } : { x: s.x, y: s.y };
+    return { id: s.id || `s${k + 1}`, label: s.label || s.name || `Survivor ${k + 1}`, ...xy, found: false, rescued: false };
+  });
+  findQueue = []; lastFoundAt = -1e9;
+  view.updateSurvivors(survivors, reveal);
+}
+function inOwnArea(d, xy, margin = 25) {
+  const b = d.area?.bounds;
+  return !!b && xy.x >= b.x0 - margin && xy.x <= b.x1 + margin && xy.y >= b.y0 - margin && xy.y <= b.y1 + margin;
 }
 
 // ---- noise floor the engine should assume ----
@@ -907,8 +924,10 @@ function loop() {
     if (scanNow) scanAll(xy, noiseDb);
 
     // people layer: hidden survivors call out; close passes in quiet find them
-    if (callNow) survivorCalls(d);
-    if (!rotorOn) for (const s of survivors) if (!s.found && Math.hypot(s.x - xy.x, s.y - xy.y) <= FOUND_PASS_M) markFound(s, 'pass', d);
+    // simulated survivors are only heard / found once the drone is over its own search area (not while transiting)
+    const onStation = inOwnArea(d, xy);
+    if (callNow && onStation) survivorCalls(d);
+    if (!rotorOn && onStation) for (const s of survivors) if (!s.found && Math.hypot(s.x - xy.x, s.y - xy.y) <= FOUND_PASS_M) markFound(s, 'pass', d);
 
     // P1's live response owns its drone while busy
     if (d === respD) {
