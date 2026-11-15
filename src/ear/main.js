@@ -77,47 +77,79 @@ function runEar(room, ear) {
   });
 
   // --- Camera "eyes" (optional; independent of the microphone) ---------------
+  // Demo: ear.html?room=ABCD&ear=C&mode=eyes → full-screen camera, big PERSON label, model pre-loaded.
+  // Test without a camera: add &camtest=/images/flood-rescue.jpg (runs the detector on a photo).
+  const eyesMode = params.get('mode') === 'eyes';
+  const camTest = params.get('camtest');
   let eyesOn = false;
+  let modelReady = null;
+  if (eyesMode) {
+    document.body.classList.add('eyes-mode');
+    $('eyeBtn').textContent = '📷 Start eyes (loading detector…)';
+    modelReady = loadDetector().then((m) => { $('eyeBtn').textContent = '📷 Start eyes (ready)'; return m; })
+      .catch((err) => { $('eyeBtn').textContent = `Detector failed to load: ${err.message}`; throw err; });
+    $('sub').textContent = 'Eyes mode: point the camera at a person.';
+  }
+
   $('eyeBtn').addEventListener('click', async () => {
     if (eyesOn) return;
     eyesOn = true;
     $('eyeBtn').classList.add('hidden');
     $('eyeBox').classList.remove('hidden');
-    const video = $('cam');
+    let source = $('cam');
     try {
-      await startCamera(video);
+      if (camTest) {
+        const img = new Image();
+        img.className = 'src';
+        img.src = camTest;
+        await img.decode();
+        source.replaceWith(img);
+        source = img;
+      } else {
+        await startCamera(source);
+      }
       $('eyeStatus').textContent = 'Loading person detector…';
-      const model = await loadDetector();
+      const model = await (modelReady ?? loadDetector());
       $('eyeStatus').textContent = 'Eyes on: looking for people';
-      runEyes(model, video);
+      channel.send({ type: MSG.HELLO, ear });
+      await keepAwake();
+      runEyes(model, source);
     } catch (err) {
       $('eyeStatus').textContent = `Camera unavailable: ${err.message}`;
     }
   });
 
-  function runEyes(model, video) {
+  function runEyes(model, source) {
     const gate = createSightingGate(CONFIG.camera);
     const canvas = $('camOverlay');
     const g = canvas.getContext('2d');
+    const isVideo = source.tagName === 'VIDEO';
     let busy = false;
     let seen = 0;
     setInterval(async () => {
-      if (busy || video.readyState < 2) return;
+      if (busy || (isVideo && source.readyState < 2)) return;
       busy = true;
       try {
-        const preds = await model.detect(video);
-        const w = video.videoWidth, h = video.videoHeight;
+        const preds = await model.detect(source);
+        const w = isVideo ? source.videoWidth : source.naturalWidth;
+        const h = isVideo ? source.videoHeight : source.naturalHeight;
         canvas.width = w; canvas.height = h;
         g.clearRect(0, 0, w, h);
         const person = bestPerson(preds, w, CONFIG.camera.minScore);
+        const big = $('eyeBig');
         if (person) {
           const [x, y, bw, bh] = person.bbox;
-          g.strokeStyle = '#ff4d4f'; g.lineWidth = Math.max(3, w / 160);
+          g.strokeStyle = '#2ecc71'; g.lineWidth = Math.max(4, w / 120);
           g.strokeRect(x, y, bw, bh);
-          $('eyeStatus').textContent = `Person ${(person.score * 100).toFixed(0)}%`;
+          big.textContent = `👤 PERSON ${(person.score * 100).toFixed(0)}%`;
+          big.classList.add('person');
+          $('eyeStatus').textContent = `${seen} sighting${seen === 1 ? '' : 's'} sent`;
         } else {
+          big.textContent = 'Looking…';
+          big.classList.remove('person');
           $('eyeStatus').textContent = `Eyes on: no person · ${seen} sent`;
         }
+        window.__eyes = { person: person ? +person.score.toFixed(2) : 0, seen };
         const sighting = gate.update(person, performance.now());
         if (sighting) {
           channel.send({ type: MSG.SIGHTING, ear, t: Date.now(), ...sighting });
