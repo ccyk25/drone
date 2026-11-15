@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GEMA · Ears debug</title>
+    <style>
+      :root { --bg:#0b0f14; --panel:#121923; --fg:#e8eef5; --muted:#8a96a3; --accent:#7c5cff; --ok:#2ecc71; --warn:#f5a623; --bad:#ff4d4f; }
+      * { box-sizing: border-box; }
+      body { margin:0; background:var(--bg); color:var(--fg); font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; padding:16px; }
+      h1 { margin:0 0 4px; font-size:22px; } .muted { color:var(--muted); font-size:13px; }
+      .grid { display:grid; gap:14px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); margin-top:14px; }
+      .card { background:var(--panel); border-radius:14px; padding:14px; }
+      .card h2 { font-size:15px; margin:0 0 10px; color:var(--muted); font-weight:600; }
+      .ears { display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; }
+      .ear { text-align:center; } .ear canvas { width:100%; max-width:140px; height:auto; background:white; border-radius:8px; }
+      .ear .name { font-size:28px; font-weight:800; }
+      .ear a { color:var(--accent); font-size:12px; word-break:break-all; }
+      .meter { height:12px; background:#1b2430; border-radius:6px; overflow:hidden; margin-top:6px; position:relative; }
+      .meter i { position:absolute; inset:0 auto 0 0; width:0; background:var(--accent); }
+      .meter b { position:absolute; top:0; bottom:0; width:2px; background:var(--warn); }
+      .stat { font-size:12px; color:var(--muted); margin-top:4px; min-height:16px; }
+      .stat.on { color: var(--ok); }
+      button { font:inherit; font-weight:600; padding:10px 12px; border:0; border-radius:10px; background:var(--accent); color:white; cursor:pointer; }
+      button.ghost { background:#1b2430; }
+      .btns { display:flex; flex-wrap:wrap; gap:8px; }
+      #log { font-family: ui-monospace, Consolas, monospace; font-size:12px; height:220px; overflow:auto; white-space:pre-wrap; color:#c9d4df; }
+      #compass { display:block; margin:0 auto; }
+      .big { font-size:28px; font-weight:800; text-align:center; }
+      .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; background:#1b2430; }
+    </style>
+  </head>
+  <body>
+    <h1>GEMA ears: debug console</h1>
+    <div class="muted">Room <b id="room"></b> · channel <span id="chan" class="pill">…</span> · P1's test harness. P2's real control screen is <a href="/" style="color:#7c5cff">/</a></div>
+
+    <div class="grid">
+      <div class="card" style="grid-column: 1 / -1">
+        <h2>1 · Join: scan with each phone (L / C / R)</h2>
+        <div class="ears" id="ears"></div>
+      </div>
+
+      <div class="card">
+        <h2>2 · Calibrate</h2>
+        <div class="btns">
+          <button id="calStart">Start (3 s quiet)</button>
+          <button id="calClap" class="ghost">Clap now</button>
+          <button id="calDone" class="ghost">Apply gains</button>
+        </div>
+        <div class="stat" id="calStat">Gains: none (all 1.0)</div>
+      </div>
+
+      <div class="card">
+        <h2>3 · Detection (relative to drone heading)</h2>
+        <canvas id="compass" width="220" height="140"></canvas>
+        <div class="big" id="bearing">–</div>
+        <div class="stat" id="detStat" style="text-align:center">Scream near a phone…</div>
+      </div>
+
+      <div class="card">
+        <h2>Simulate (no phones needed)</h2>
+        <div class="btns">
+          <button data-sim="L">Scream L</button>
+          <button data-sim="C">Scream C</button>
+          <button data-sim="R">Scream R</button>
+          <button data-simcam="C" class="ghost">📷 Person seen C</button>
+        </div>
+        <div class="stat">Injects fake level + scream messages into fusion.</div>
+      </div>
+
+      <div class="card" style="grid-column: 1 / -1">
+        <h2>Log</h2>
+        <div id="log"></div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/debug/main.js"></script>
+  </body>
+</html>

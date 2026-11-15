@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+    <meta name="theme-color" content="#0b0f14" />
+    <title>GEMA · Ear</title>
+    <style>
+      :root { --bg:#0b0f14; --fg:#e8eef5; --muted:#8a96a3; --accent:#7c5cff; --ok:#2ecc71; --warn:#f5a623; --bad:#ff4d4f; }
+      * { box-sizing: border-box; }
+      html, body { margin:0; height:100%; background:var(--bg); color:var(--fg);
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-tap-highlight-color: transparent; }
+      body { display:flex; flex-direction:column; padding:16px; gap:14px; }
+      .top { display:flex; justify-content:space-between; align-items:center; font-size:14px; color:var(--muted); }
+      .dot { width:10px; height:10px; border-radius:50%; display:inline-block; margin-right:6px; background:var(--muted); vertical-align:middle; }
+      .dot.live { background:var(--ok); } .dot.local { background:var(--warn); } .dot.error { background:var(--bad); }
+      .ear { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; border-radius:20px;
+        background:#121923; transition: background .15s; min-height: 240px; }
+      .ear.flash { background: var(--bad); }
+      .letter { font-size: 38vw; line-height:1; font-weight:800; letter-spacing:-2px; }
+      @media (min-width: 600px) { .letter { font-size: 180px; } }
+      .sub { color:var(--muted); font-size:15px; margin-top:6px; text-align:center; padding: 0 12px; }
+      .bars { display:grid; gap:10px; }
+      .bar { height:18px; background:#1b2430; border-radius:9px; position:relative; overflow:hidden; }
+      .bar > i { position:absolute; inset:0 auto 0 0; width:0; background:var(--accent); border-radius:9px; transition: width .05s linear; }
+      .bar > b { position:absolute; top:0; bottom:0; width:2px; background:var(--warn); }
+      .bar.score > i { background: var(--bad); }
+      .label { display:flex; justify-content:space-between; font-size:13px; color:var(--muted); margin-bottom:4px; }
+      button { font:inherit; font-size:20px; font-weight:700; padding:18px; border:0; border-radius:14px; background:var(--accent); color:white; width:100%; }
+      button.ghost { background:#1b2430; font-size:16px; padding:14px; }
+      .pick { display:grid; gap:12px; }
+      .pick input { font:inherit; font-size:22px; padding:14px; border-radius:12px; border:1px solid #2a3542; background:#121923; color:var(--fg); text-transform:uppercase; text-align:center; letter-spacing:4px; }
+      .row { display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; }
+      .hidden { display:none !important; }
+      .note { font-size:12px; color:var(--muted); text-align:center; }
+      .eye { position:relative; border-radius:14px; overflow:hidden; background:#000; }
+      .eye video, .eye canvas { width:100%; display:block; }
+      .eye canvas { position:absolute; inset:0; height:100%; }
+      .eye .tag { position:absolute; left:8px; bottom:8px; background:rgba(0,0,0,.6); padding:4px 8px; border-radius:8px; font-size:13px; }
+    </style>
+  </head>
+  <body>
+    <!-- Join screen (only when the URL has no room/ear) -->
+    <section id="join" class="pick hidden">
+      <h2 style="margin:0">Join as a GEMA ear</h2>
+      <input id="roomInput" maxlength="4" placeholder="ROOM" autocomplete="off" />
+      <div class="row">
+        <button data-ear="L">L</button><button data-ear="C">C</button><button data-ear="R">R</button>
+      </div>
+      <p class="note">Or scan the QR code on the control screen.</p>
+    </section>
+
+    <!-- Ear screen -->
+    <section id="earView" class="hidden" style="display:flex;flex-direction:column;gap:14px;flex:1">
+      <div class="top">
+        <span><span id="dot" class="dot"></span><span id="status">connecting…</span></span>
+        <span>Room <b id="room"></b></span>
+      </div>
+      <div id="earBox" class="ear">
+        <div id="letter" class="letter">?</div>
+        <div id="sub" class="sub">Tap the button below to start listening.</div>
+      </div>
+      <div class="bars">
+        <div>
+          <div class="label"><span>Level</span><span id="dbText">–</span></div>
+          <div class="bar"><i id="levelBar"></i><b id="floorMark"></b></div>
+        </div>
+        <div>
+          <div class="label"><span>Scream-like</span><span id="countText">0 sent</span></div>
+          <div class="bar score"><i id="scoreBar"></i></div>
+        </div>
+        <div class="label" style="justify-content:center"><span>Hearing: <b id="sound">–</b></span></div>
+      </div>
+      <button id="startBtn">Tap to start listening</button>
+      <button id="muffledBtn" class="ghost hidden">🔇 Muffled-voice mode: OFF</button>
+      <div id="eyeBox" class="eye hidden">
+        <video id="cam" playsinline muted></video>
+        <canvas id="camOverlay"></canvas>
+        <div id="eyeStatus" class="tag">Loading eyes…</div>
+      </div>
+      <button id="eyeBtn" class="ghost">📷 Add eyes (camera)</button>
+      <p class="note">Keep this screen on and the phone face-up. Nothing is recorded; only numbers are sent.</p>
+    </section>
+
+    <script type="module" src="/src/ear/main.js"></script>
+  </body>
+</html>
