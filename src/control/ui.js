@@ -129,7 +129,7 @@ export function createUI(root, opts) {
       <h4><span>Scan to join as an ear</span><span>Room <b>${room}</b></span></h4>
       <div class="qrs">${EARS.map(e => `
         <a class="qr" data-ear="${e}" target="_blank" rel="noopener">
-          <div class="qr-img"></div><div class="qr-label">${e}</div><div class="qr-state" data-ear-state="${e}">offline</div>
+          <div class="qr-img"></div><div class="qr-label">${e === 'C' ? 'C · 📷 camera' : e === 'L' ? 'L · 🎤 left mic' : 'R · 🎤 right mic'}</div><div class="qr-state" data-ear-state="${e}">offline</div>
         </a>`).join('')}</div>
     </section>
 

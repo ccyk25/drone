@@ -77,4 +77,21 @@ describe('fusion', () => {
     expect(f.connectedEars(3000)).toEqual(['L', 'R']);
     expect(f.connectedEars(4000)).toEqual(['R']);
   });
+
+  it('demo setup: L and R listen, C is camera-only → a scream near L turns left, near R turns right', () => {
+    for (const [near, sign] of [['L', -1], ['R', 1]]) {
+      const out = [];
+      const f = createFusion(CONFIG, { onDetection: (d) => out.push(d), autoFlush: false });
+      f.ingest({ type: 'hello', ear: 'C' }, 900);                       // camera phone connected, no mic levels
+      f.ingest({ type: 'sighting', ear: 'C', t: 0, confidence: 0.8, offset: 0 }, 950);
+      out.length = 0;                                                    // ignore the camera detection
+      const levels = near === 'L' ? { L: -20, R: -27 } : { L: -27, R: -20 };
+      for (const [ear, db] of Object.entries(levels)) f.ingest({ type: 'level', ear, t: 0, db, floorDb: -60, bandRatio: 0.6, screamScore: 0.9 }, 1000);
+      f.ingest({ type: 'scream', ear: near, t: 0, peakDb: -20, durationMs: 350, confidence: 0.9 }, 1010);
+      f.flush(2000);
+      expect(out).toHaveLength(1);
+      expect(Math.sign(out[0].relBearingDeg)).toBe(sign);
+      expect(Math.abs(out[0].relBearingDeg)).toBeGreaterThan(30);
+    }
+  });
 });

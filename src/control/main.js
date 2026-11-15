@@ -273,7 +273,7 @@ const ui = createUI(document.getElementById('hud'), {
   scenario: scenarioId,
   site: site.id,
   sites: Object.fromEntries(Object.entries(SCENARIOS).map(([k, v]) => [k, v.sites.map(({ id, name, event }) => ({ id, name, event }))])),
-  earUrl: ear => new URL(`ear.html?room=${ROOM}&ear=${ear}`, location.href).href,
+  earUrl: ear => new URL(`ear.html?room=${ROOM}&ear=${ear}${ear === 'C' ? '&mode=eyes' : ''}`, location.href).href,   // C = camera phone (eyes mode)
   handlers: {
     onStart: () => { running = !running; ui.setStarted(running); if (running && t0Sim == null) t0Sim = simMs; ui.log(running ? 'Search started' : 'Paused'); },
     onReset: () => reset(),

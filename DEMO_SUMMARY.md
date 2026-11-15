@@ -81,11 +81,22 @@ After a flood or collapse, drone teams search blind. Thermal cameras can't see u
 
 ## 🎬 Live demo runbook: mission map rescue flow (built 13.15)
 
-**Setup:**
-- **Laptop/projector:** `https://gema-drone.vercel.app/?room=ABCD` (pick any 4 letters). Speakers ON, because they are the drone speaker. Scenario **Flood** (heat sees people) or **Collapse** (heat blocked by rubble).
-- **Camera phone** (faces forward = the drone's camera): `…/ear.html?room=ABCD&ear=C&mode=eyes`. Wait for **"Start eyes (ready)"**, tap it, then also tap **"Tap to start listening"**. The level and scream bars show the mic working.
-- **Ear phones for direction:** `…/ear.html?room=ABCD&ear=L` and `&ear=R`, placed left and right of the camera phone. Tap "start listening" on each. They can also join from **Join ears** on the mission map.
-- On the mission map: **Calibrate** (quiet, then one clap), then **▶ Start search**.
+**Setup: 3 phones = the drone's camera and its two ears** (one drone, not a swarm: real acoustic drones carry the mic array on their frame)
+
+```
+        🎤 L phone            📷 C phone (camera)           🎤 R phone
+        left mic        faces the person / audience        right mic
+           ◄──────── ~1 m ────────►◄──────── ~1 m ────────►
+                       💻 laptop speaker = drone speaker (behind the phones)
+```
+
+- **Laptop/projector:** `https://gema-drone.vercel.app/?room=ABCD` (any 4 letters). Volume up, because this is the drone speaker. Scenario **Flood** (heat sees people) or **Collapse** (heat blocked by rubble).
+- On the mission map, open **Join ears** and scan:
+  - **L · 🎤 left mic** with the left phone, then tap **"Tap to start listening"**
+  - **R · 🎤 right mic** with the right phone, then tap **"Tap to start listening"**
+  - **C · 📷 camera** with the middle phone (it opens eyes mode). Wait for **"Start eyes (ready)"**, then tap it. Open this one **early**: the detector takes 25 s or more to load the first time.
+- **Calibrate:** only if L and R are **different phone models**, and do it during setup, not in the pitch (3 s of quiet, then one clap at the centre). Same-model phones → skip it.
+- Then **▶ Start search**.
 
 **The sequence (the banner on the map shows each phase):**
 
@@ -94,7 +105,7 @@ After a flood or collapse, drone teams search blind. Thermal cameras can't see u
 | 1 | A person stands in front of / to the side of the camera phone | 📷 **PERSON IN VIEW**: turns toward them and steps 15 m (re-steers on each sighting; never flies off forward) |
 | 2 | The person steps out of view | After 5 s: 🌡 **HEAT CHECK** (simulated thermal). Flood: heat found. Collapse: blocked by rubble |
 | 3 | The drone speaker says *"If you can hear me, shout for help"* | 👂 **LISTENING** |
-| 4 | The person shouts, from the left or the right | 🔊 Turns toward the voice and steps 25 m |
+| 4 | The person shouts **near the L or R phone** | 🔊 Turns left or right toward the voice and steps 25 m |
 | 5 | (If needed) shout again | ✅ **PERSON CONFIRMED**. Speaker: *"Help is coming. Stay where you are."* 🚩 A flag shows details: on a roof or vehicle / under rubble, which sensors confirmed, direction, coordinates, time |
 | 6 | Wait about 9 s | 🔍 Resumes searching. The next shout starts the same flow (voice → heat → confirm) |
 
