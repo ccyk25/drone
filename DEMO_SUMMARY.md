@@ -1,4 +1,4 @@
-# GEMA: progress summary for the demo (12.50)
+# GEMA: progress summary for the demo (updated 12.55)
 
 **GEMA is a search map for disaster drones that hears survivors and admits what it might have missed.**
 
@@ -15,7 +15,7 @@ After a flood or collapse, drone teams search blind. Thermal cameras can't see u
 1. **Ears:** microphones (phones stand in for a drone's microphone array) pick out screams and muffled calls through flood and rain noise.
 2. **Direction:** comparing loudness across the microphones tells the drone which way to turn.
 3. **Eyes:** a camera confirms people at close range.
-4. **Heat:** thermal as one more evidence layer, with its blind spots modelled honestly (simulated; in progress).
+4. **Heat:** thermal as one more evidence layer, with its blind spots modelled honestly (simulated: no thermal hardware).
 5. **Trust map:** every area holds a probability that someone is there. Silence only clears an area when listening conditions were good. **In noise, it stays amber: "NOT CLEARED."**
 6. **Where to look next:** the drone flies to the most likely area it hasn't checked properly. Families can mark "last seen here."
 
@@ -33,7 +33,10 @@ After a flood or collapse, drone teams search blind. Thermal cameras can't see u
 | Camera eyes | Real flood photos: people found at **77–99%**, no false alarm on a satellite image |
 | Phones to screen in real time | Supabase realtime tested end to end; live on Vercel |
 | Calibration, muffled-voice mode, simulate buttons | Built |
-| Code quality | **31 unit tests** pass |
+| **Trust map engine** (built) | Every sensor has its own detection probability by distance, noise and cover (roof/open/trees/water); silence in noise or under roofs stays NOT CLEARED |
+| **Thermal (simulated)** | Modelled with its real blind spots: roofs, water, hot afternoons |
+| **Simulation evidence** (`/lab.html`) | 200 runs per strategy: thermal drone **74%** found → ears + thermal **99%** → GEMA guided **99.9%**, first survivor **3× faster** (31 s vs 105 s). Thermal alone: all its misses were in areas it flew over; the trust map flagged **94%** of them NOT CLEARED |
+| Code quality | **42 unit tests** pass |
 
 ## Honest limits (say these, because judges reward honesty)
 - A scream **12 dB quieter** than the flood is missed. A muffled call through **heavy rain at equal loudness** is missed. **That's exactly what the "NOT CLEARED" cells are for.**
@@ -46,8 +49,8 @@ After a flood or collapse, drone teams search blind. Thermal cameras can't see u
 | Item | Owner | Status |
 |---|---|---|
 | Control screen: map, drone, pins | P2 | Pushing at 1.00pm |
-| Trust-map engine and thermal layer | P1 (Claude) | Building now |
-| Simulation chart: thermal-only vs GEMA | P1 (Claude) | Next |
+| Trust-map engine and thermal layer | P1 (Claude) | ✅ Done (P2 wires it to the map: HANDOVER section 18) |
+| Simulation chart: thermal-only vs GEMA | P1 (Claude) | ✅ Done (`/lab.html`) |
 | YOLO person detector (aerial) | Background experiment | Running |
 | Real-phone test (2–3 phones) | Team | To do |
 | Turn off Vercel auto-deploy before 2.55pm | Vercel account owner | To do |
@@ -62,7 +65,7 @@ After a flood or collapse, drone teams search blind. Thermal cameras can't see u
 | 0:40 | **Insight:** "No detection is not the same as clear." Show the sensor table (thermal vs mic) |
 | 1:10 | **Live demo:** (1) a judge screams near the left phone and the drone turns left; (2) play the flood recording: no false alarm, and cells stay amber; (3) a muffled "help" under a box is heard; (4) the camera confirms a person; (5) **"Reveal ground truth"**: the missed survivor sits in an amber cell |
 | 3:10 | **How it works:** learned background plus pitch, the trust map, and the hearing lab results (16/16) |
-| 3:50 | **Evidence:** the simulation chart, and the stakeholders (Bomba, APM, NADMA, families) |
+| 3:50 | **Evidence:** simulation: 74% → 99% found, first find 3× faster, and misses flagged as NOT CLEARED; then the stakeholders (Bomba, APM, NADMA, families) |
 | 4:30 | **Close:** "We built the brain. Fraunhofer built the ears. Bomba has the drones." |
 
 ## Pages
