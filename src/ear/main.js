@@ -124,15 +124,21 @@ function runEar(room, ear) {
     const canvas = $('camOverlay');
     const g = canvas.getContext('2d');
     const isVideo = source.tagName === 'VIDEO';
+    // Detect on a full-resolution copy of the frame so box coordinates are always in the source's
+    // own pixels (the detector otherwise measures an <img> at its on-screen size → boxes in the wrong place).
+    const frame = document.createElement('canvas');
+    const fg = frame.getContext('2d', { willReadFrequently: true });
     let busy = false;
     let seen = 0;
     setInterval(async () => {
       if (busy || (isVideo && source.readyState < 2)) return;
       busy = true;
       try {
-        const preds = await model.detect(source);
         const w = isVideo ? source.videoWidth : source.naturalWidth;
         const h = isVideo ? source.videoHeight : source.naturalHeight;
+        if (frame.width !== w || frame.height !== h) { frame.width = w; frame.height = h; }
+        fg.drawImage(source, 0, 0, w, h);
+        const preds = await model.detect(frame);
         canvas.width = w; canvas.height = h;
         g.clearRect(0, 0, w, h);
         const person = bestPerson(preds, w, CONFIG.camera.minScore);
