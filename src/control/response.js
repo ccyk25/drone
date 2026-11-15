@@ -190,7 +190,11 @@ export function createResponder(env) {
       // drone (the phones stay put on stage while the virtual drone turns).
       const answeredCallout = sensor === 'audio' && phase === 'listen' && evidence.length > 0;
       const from = droneXY();
-      const abs = wrap(env.drone.state.headingDeg + det.relBearingDeg);
+      // Stage mode: the phones sit in front of the screen, so left phone = screen left (west), right = screen
+      // right (east), centre/camera = up the screen. Otherwise directions are relative to the drone's nose.
+      const abs = env.screenFrame?.()
+        ? wrap(sensor === 'audio' ? (det.relBearingDeg <= -20 ? 270 : det.relBearingDeg >= 20 ? 90 : 0) : det.relBearingDeg)
+        : wrap(env.drone.state.headingDeg + det.relBearingDeg);
       const est = along(from, abs, EST_RANGE[sensor]);
       evidence.push({ sensor, t: now, abs, xy: est, conf: det.confidence });
       lastSeen[sensor] = now;

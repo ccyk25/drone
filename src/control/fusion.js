@@ -39,6 +39,7 @@ export function createFusion(config = CONFIG, { onDetection, autoFlush = true } 
   const { windowMs, staleMs, levelLookbackMs } = config.fusion;
   const lastSeen = {};                // ear → time last heard from
   const levels = {};                  // ear → [{ at, db }]
+  const floors = {};                  // ear → latest background level (dB) reported by that phone
   let gains = {};                     // ear → linear gain
   let group = null;                   // { start, screams: { ear: msg } }
   let timer = null;
@@ -69,7 +70,8 @@ export function createFusion(config = CONFIG, { onDetection, autoFlush = true } 
       const screamDb = g.screams[e]?.peakDb ?? -Infinity;
       const levelDb = peakLevel(e, g.start - levelLookbackMs, at);
       const raw = Math.max(screamDb, levelDb);
-      if (Number.isFinite(raw)) adjusted[e] = raw + gainDb(e);
+      // rise above this phone's own background when known (phones' mics differ by 15 dB+); else calibrated level
+      if (Number.isFinite(raw)) adjusted[e] = Number.isFinite(floors[e]) ? raw - floors[e] : raw + gainDb(e);
     }
 
     const baseConf = Math.max(...Object.values(g.screams).map((s) => s.confidence));
@@ -105,6 +107,7 @@ export function createFusion(config = CONFIG, { onDetection, autoFlush = true } 
     if (msg.type === MSG.LEVEL) {
       const buf = (levels[msg.ear] ??= []);
       buf.push({ at, db: msg.db });
+      if (Number.isFinite(msg.floorDb)) floors[msg.ear] = msg.floorDb;
       while (buf.length && at - buf[0].at > 5000) buf.shift();
     }
 

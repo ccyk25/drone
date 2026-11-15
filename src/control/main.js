@@ -733,6 +733,7 @@ const responder = createResponder({
   scenario: () => scenarioId,
   toLatLng: (x, y) => xyToLatLng(x, y),
   hud: document.getElementById('hud'),
+  screenFrame: () => true,     // stage demo: left phone → screen left, right phone → screen right
 });
 // rehearsal without a camera: keys Q / P / E = person seen left / ahead / right
 window.addEventListener('keydown', (ev) => {

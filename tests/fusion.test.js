@@ -94,4 +94,19 @@ describe('fusion', () => {
       expect(Math.abs(out[0].relBearingDeg)).toBeGreaterThan(30);
     }
   });
+
+  it('phones with very different mics (L floor -51, R floor -36): picks the phone that rose most above its own background', () => {
+    const run = (lvl, fired) => {
+      const out = [];
+      const f = createFusion(CONFIG, { onDetection: (d) => out.push(d), autoFlush: false });
+      for (const [ear, db, floorDb] of lvl) f.ingest({ type: 'level', ear, t: 0, db, floorDb, bandRatio: 0.5, screamScore: 0.5 }, 1000);
+      f.ingest({ type: 'scream', ear: fired, t: 0, peakDb: lvl.find((l) => l[0] === fired)[1], durationMs: 300, confidence: 0.9 }, 1010);
+      f.flush(2000);
+      return out[0].relBearingDeg;
+    };
+    // scream near L: raw L -32 is QUIETER than R -30, but L rose 19 dB over its background vs R only 6 dB → left
+    expect(run([['L', -32, -51], ['R', -30, -36]], 'L')).toBeLessThan(0);
+    // scream near R → right
+    expect(run([['L', -45, -51], ['R', -15, -36]], 'R')).toBeGreaterThan(0);
+  });
 });
