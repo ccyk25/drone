@@ -118,7 +118,23 @@ export function createConnect({ room, earUrl, onCalibrate, onClose } = {}) {
     }
     sc.textContent = new Date().toLocaleTimeString([], { hour12: false });
   }
+  // drag the window by its title bar
+  let moved = false;
+  const bar = pip.querySelector('.bar');
+  bar.style.cursor = 'move'; bar.style.touchAction = 'none';
+  bar.addEventListener('pointerdown', (ev) => {
+    const r = pip.getBoundingClientRect(), dx = ev.clientX - r.left, dy = ev.clientY - r.top;
+    bar.setPointerCapture(ev.pointerId);
+    const move = (e) => {
+      moved = true;
+      pip.style.left = `${Math.max(0, Math.min(innerWidth - r.width, e.clientX - dx))}px`;
+      pip.style.top = `${Math.max(0, Math.min(innerHeight - 40, e.clientY - dy))}px`;
+    };
+    const up = () => { bar.removeEventListener('pointermove', move); bar.removeEventListener('pointerup', up); };
+    bar.addEventListener('pointermove', move); bar.addEventListener('pointerup', up);
+  });
   setInterval(() => {                                          // stay below the drone bar and the phase banner
+    if (moved) return;                                         // the operator placed it: leave it there
     const r = document.querySelector('section.swarm')?.getBoundingClientRect();
     if (r && r.height) pip.style.top = `${Math.round(r.bottom + 72)}px`;
   }, 1000);

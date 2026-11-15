@@ -253,6 +253,11 @@ export function createMap(elId, config) {
     }
   }
 
+  /** show/hide every search-area drawing (grid cells, mission box, drone areas); the engine keeps running */
+  function setAreasVisible(on) {
+    for (const l of [gridLayer, missionLayer, sectorLayer]) { if (on) l.addTo(map); else map.removeLayer(l); }
+  }
+
   // ---- rescue drone R1 (heavy lift, carries the enclosed capsule) ----
   const lifterIcon = L.divIcon({
     className: 'lifter-icon', iconSize: [84, 84], iconAnchor: [42, 42],
@@ -344,7 +349,7 @@ export function createMap(elId, config) {
 
   return {
     map, buildGrids, updateGrid, setHeatmap, fitToHud, setImagery, startAreaSelect, showBearing, addPin, addFlag, updateSurvivors, flash, resetTrail,
-    setFleet, updateFleet, setSectors, setBase, setMission, boundsOf, setLifterPad, updateLifter,
+    setFleet, updateFleet, setSectors, setAreasVisible, setBase, setMission, boundsOf, setLifterPad, updateLifter,
     onDroneClick(fn) { onDronePick = fn; },
     setFollow(on) { follow = !!on; },
     onClick(fn) { map.on('click', e => fn(latLngToXY(e.latlng), e.latlng)); },

@@ -770,14 +770,15 @@ window.addEventListener('keydown', (ev) => {
   });
   window.__paintFleet = paint;
   // ✕ Clear area: drop any selected/drawn area and go back to the scenario's default search area
+  let areasShown = true;
   const clr = document.createElement('button');
-  clr.className = 'btn sm'; clr.textContent = '✕ Clear area'; clr.title = 'Remove any selected area and go back to the default search area';
+  clr.className = 'btn sm'; clr.textContent = '✕ Remove area'; clr.title = 'Remove the search area (grid and boxes) from the map';
   clr.addEventListener('click', () => {
-    if (responder.busy()) { ui.log('Finish the current rescue response first', 'warn'); return; }
     cancelSelect?.(); cancelSelect = null;
-    CONFIG = withScenario(scenarioId, site);
-    respD = null; reset(); paint(); pushSwarmUi();
-    ui.log('Search area cleared · back to the default area', 'area');
+    areasShown = !areasShown;
+    view.setAreasVisible?.(areasShown);
+    clr.textContent = areasShown ? '✕ Remove area' : '▣ Show area';
+    ui.log(areasShown ? 'Search area shown' : 'Search area removed from the map', 'area');
   });
   act?.insertBefore(clr, act.querySelector('[data-act="d-hold"]'));
   paint();
