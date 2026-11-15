@@ -14,17 +14,27 @@ const ALIGNED_DEG = 15;
 export function createDrone(config, start = { x: 0, y: 0, headingDeg: 0 }) {
   const { speedMps, turnRateDegPerS } = config.drone;
   const state = { x: start.x, y: start.y, headingDeg: start.headingDeg || 0, mode: 'idle' };
-  let target = null;
+  let target = null, face = null;   // face: heading to turn to in place (demo)
   const ARRIVE_M = 8;
 
+  function faceTo(deg, mode = 'investigate') { target = null; face = wrapDeg(deg); state.mode = mode; }
+
   function setTarget(xy, mode = 'search') {
+    face = null;
     target = xy ? { x: xy.x, y: xy.y } : null;
     state.mode = target ? mode : 'idle';
   }
 
   /** Advance dtMs. Returns { arrived } (true on the tick the target is reached). */
   function tick(dtMs) {
-    if (!target) return { arrived: false };
+    if (!target) {
+      if (face != null) {                                      // turn in place
+        const diff = wrapDeg(face - state.headingDeg), maxTurn = turnRateDegPerS * (dtMs / 1000);
+        state.headingDeg = wrapDeg(state.headingDeg + Math.max(-maxTurn, Math.min(maxTurn, diff)));
+        if (Math.abs(diff) <= maxTurn) face = null;
+      }
+      return { arrived: false };
+    }
     let remaining = dtMs / 1000;
     while (remaining > 1e-6) {
       const dt = Math.min(SUBSTEP_S, remaining);
@@ -56,5 +66,5 @@ export function createDrone(config, start = { x: 0, y: 0, headingDeg: 0 }) {
     return { arrived: false };
   }
 
-  return { state, setTarget, tick, get target() { return target; } };
+  return { state, setTarget, faceTo, tick, get target() { return target; } };
 }

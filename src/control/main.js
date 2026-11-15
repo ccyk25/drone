@@ -734,6 +734,8 @@ const responder = createResponder({
   toLatLng: (x, y) => xyToLatLng(x, y),
   hud: document.getElementById('hud'),
   screenFrame: () => true,     // stage demo: left phone → screen left, right phone → screen right
+  turnInPlace: () => true,     // stage demo: the drone turns in place to face the voice / person
+  faceTo: (deg) => { const d = respD || sel(); d.status = 'active'; d.current = { i: -1, x: d.drone.state.x, y: d.drone.state.y }; d.drone.faceTo(deg); },
 });
 // rehearsal without a camera: keys Q / P / E = person seen left / ahead / right
 window.addEventListener('keydown', (ev) => {

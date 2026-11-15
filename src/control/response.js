@@ -104,6 +104,7 @@ export function createResponder(env) {
   }
 
   function step(sensor, abs) {
+    if (env.turnInPlace?.() && env.faceTo) { env.faceTo(abs); return; }   // demo: turn in place to face it
     const from = droneXY();
     env.setTarget(along(from, abs, STEP[sensor]));
   }
@@ -194,7 +195,9 @@ export function createResponder(env) {
       // Stage mode: the phones sit in front of the screen, so left phone = screen left (west), right = screen
       // right (east), centre/camera = up the screen. Otherwise directions are relative to the drone's nose.
       const abs = env.screenFrame?.()
-        ? wrap(sensor === 'audio' ? (det.relBearingDeg <= -20 ? 270 : det.relBearingDeg >= 20 ? 90 : 0) : det.relBearingDeg)
+        ? (sensor === 'audio'
+            ? (det.relBearingDeg <= -20 ? 270 : det.relBearingDeg >= 20 ? 90 : 0)
+            : (det.relBearingDeg <= -8 ? 270 : det.relBearingDeg >= 8 ? 90 : 0))   // camera: person left/right/centre of frame
         : wrap(env.drone.state.headingDeg + det.relBearingDeg);
       const est = along(from, abs, EST_RANGE[sensor]);
       evidence.push({ sensor, t: now, abs, xy: est, conf: det.confidence });
