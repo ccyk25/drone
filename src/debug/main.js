@@ -51,7 +51,7 @@ function onMessage(msg) {
     $(`lv-${msg.ear}`).style.width = `${pct(msg.db)}%`;
     $(`fl-${msg.ear}`).style.left = `${pct(msg.floorDb)}%`;
   }
-  if (msg.type === MSG.SCREAM) log(`SCREAM ${msg.ear}: peak ${msg.peakDb.toFixed(1)} dB, ${msg.durationMs.toFixed(0)} ms, conf ${msg.confidence.toFixed(2)}`);
+  if (msg.type === MSG.SCREAM) log(`${msg.kind === 'muffled' ? 'MUFFLED VOICE' : 'SCREAM'} ${msg.ear}: peak ${msg.peakDb.toFixed(1)} dB, ${msg.durationMs.toFixed(0)} ms, conf ${msg.confidence.toFixed(2)}`);
   if (msg.type === MSG.SIGHTING) log(`📷 SIGHTING ${msg.ear}: person ${(msg.confidence * 100).toFixed(0)}%, offset ${msg.offset.toFixed(2)}`);
   if (msg.type === MSG.CALIBRATION) {
     clapPeaks[msg.ear] = msg.clapPeakDb;

@@ -6,7 +6,7 @@ export const EARS = ['L', 'C', 'R'];
 export const MSG = {
   HELLO: 'hello',             // ear → control  { ear, label? }
   LEVEL: 'level',             // ear → control  { ear, t, db, floorDb, bandRatio, screamScore }  (~8 Hz)
-  SCREAM: 'scream',           // ear → control  { ear, t, peakDb, durationMs, confidence }
+  SCREAM: 'scream',           // ear → control  { ear, t, peakDb, durationMs, confidence, kind?: 'scream'|'muffled' }
   CALIBRATE: 'calibrate',     // control → ears { phase: 'start'|'clap'|'done', gains? }
   CALIBRATION: 'calibration', // ear → control  { ear, floorDb, clapPeakDb }  (reply after the clap phase)
   SIGHTING: 'sighting'        // ear → control  { ear, t, confidence, offset }  camera saw a person; offset -1 (left) .. +1 (right)
@@ -34,7 +34,8 @@ export function validate(msg) {
         && isNum(msg.bandRatio) && isNum(msg.screamScore);
     case MSG.SCREAM:
       return isEar(msg.ear) && isNum(msg.t) && isNum(msg.peakDb) && isNum(msg.durationMs)
-        && isNum(msg.confidence);
+        && isNum(msg.confidence)
+        && (msg.kind === undefined || msg.kind === 'scream' || msg.kind === 'muffled');
     case MSG.CALIBRATE:
       return ['start', 'clap', 'done'].includes(msg.phase)
         && (msg.gains === undefined || (typeof msg.gains === 'object' && msg.gains !== null

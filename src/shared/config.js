@@ -6,7 +6,10 @@ export const CONFIG = {
   ears: { L: -45, C: 0, R: 45 },                       // degrees, relative to the drone's heading
   audio: { frameSize: 2048, bandLowHz: 1000, bandHighHz: 4000 },
   ear: { analysisMs: 50, levelHz: 8, floorWindowS: 5, floorPercentile: 0.2, helloEveryMs: 5000 },
-  scream: { minAboveFloorDb: 15, minBandRatio: 0.45, minDurationMs: 300, cooldownMs: 1500, gapToleranceMs: 120 },
+  // Clear scream: loud, bright, and NOT flat (flat = water/rain/wind noise)
+  scream: { minAboveFloorDb: 15, minBandRatio: 0.45, maxFlatness: 0.5, minDurationMs: 300, cooldownMs: 1500, gapToleranceMs: 120 },
+  // Muffled voice behind rubble/walls: quieter, high frequencies lost, but still periodic (voiced) and not flat
+  muffled: { minAboveFloorDb: 8, minClarity: 0.6, minPitchHz: 120, maxPitchHz: 1000, maxFlatness: 0.35, minDurationMs: 400, confidenceScale: 0.7 },
   fusion: { windowMs: 600, sharpness: 3, staleMs: 3000, levelLookbackMs: 900 },
   calibration: { floorMs: 3000, clapListenMs: 4000 },
   camera: { intervalMs: 600, minScore: 0.6, confirmFrames: 2, cooldownMs: 3000, halfFovDeg: 30 },

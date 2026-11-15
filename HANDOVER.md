@@ -473,3 +473,42 @@ Judges and mentors **will** ask: *"Why not thermal or lidar? Won't noise ruin a 
 - **Our claim:** *"We found no system that combines real-time listening, family reports and a trust map that refuses to call silence 'clear'."* Never say "none exists."
 - No recordings stored, no faces, no real victim imagery. Teammates appear only with their consent.
 - Report the simulation and calibration numbers as they come out, even if they're modest.
+
+---
+
+## 15. Hearing in a flood, and the drop-ear (built and design)
+
+### What the ear now does (built, tested with synthetic signals)
+
+| Sound | How GEMA tells | Result |
+|---|---|---|
+| **Rushing water, rain, wind, rotor wash** | Broadband, so **spectral flatness is high** and there's no repeating pitch | Rejected. It only raises the noise floor, so POD drops and cells stay amber |
+| **Clear scream** | Loud (15 dB or more above the floor), bright (1–4 kHz), not flat | `kind: 'scream'`, high confidence |
+| **Muffled voice behind rubble or walls** | High frequencies are lost, but the voice is still **periodic** (autocorrelation pitch 120–1000 Hz), 8 dB or more above the floor, not flat | `kind: 'muffled'`, **lower confidence** (weaker evidence) |
+| **Voice over moderate water noise** | Pitch still detectable through the noise | Detected as a muffled voice |
+
+- The phone shows live what it's hearing: *quiet / noise (water, rain, wind, rotor) / voice-like with its pitch*. Use this to tune on the day.
+- **Muffled-voice mode is OFF by default.** Normal talking near a phone would trigger it during the pitch. Turn it on for the demo moment: put a phone under a box or cushion ("rubble") and have someone call out from behind. The log shows `MUFFLED VOICE`.
+- **Next step (honest):** a trained sound classifier (YAMNet's AudioSet classes include Screaming, Shout, Crying, and Water, Rain and Stream) as a second opinion, plus a **knocking/tapping pattern detector**, because trapped survivors are taught to tap.
+
+### The drop-ear (pulley/tether) concept, and how it avoids hitting rubble
+
+**Why lower the mic at all? It's the strongest argument.** Rotor noise falls off with distance. A mic lowered several metres below the drone hears **much less rotor noise** and is **closer to the survivor**, so the signal-to-noise ratio improves on both counts. That raises POD exactly where it matters.
+
+**How it avoids rubble** (design, not built):
+
+1. **Listen high, drop low only at hotspots.** The drone listens from a safe height. It lowers the ear only over a cell that is likely but uncertain (high probability, amber trust), and only into a visible opening. The trust map tells you **where it's worth the risk**.
+2. **A caged pod.** The mic sits inside a round protective cage with a foam bumper, like collision-tolerant inspection drones use. A round cage rolls off edges instead of snagging.
+3. **A down-facing range sensor on the pod** (small ultrasonic or time-of-flight). The winch stops about 1 m above any surface. **This is where lidar fits:** for navigating the probe, not for finding people.
+4. **A winch with tension sensing.** Slack means it touched something; a sudden spike means it's snagged. Either way: stop, raise slowly, and try a different opening.
+5. **A breakaway weak link.** If the tether snags hard, the link breaks and the drone flies free. You lose a cheap pod, not the drone.
+6. **Slow descent and hover control** to limit swinging. A short tether (around 5–10 m) keeps it manageable.
+7. **Waterproof pod** (IP67 MEMS mics behind acoustic membranes), so it can hang just above floodwater.
+
+**Software hook (optional, P2/P3, only if there's time):** a "🔽 Lower ear here" button on the control screen. The drone hovers, and for that cell POD gets a bonus with less noise penalty. The trust map visibly firms up: amber turns to green, or a detection appears.
+
+### Slide 6 / Q&A lines
+
+- *"Flood noise is broadband. Voices have pitch. GEMA hears the difference, and when it can't, it says so."*
+- *"Muffled voices lose their brightness but keep their rhythm. We listen for the rhythm."*
+- *"We don't fly into rubble. We listen from above, and lower a caged ear only where the map says someone is probably there."*

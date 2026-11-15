@@ -60,11 +60,19 @@ function runEar(room, ear) {
       return;
     }
     $('startBtn').classList.add('hidden');
+    $('muffledBtn').classList.remove('hidden');
     $('sub').textContent = 'Listening…';
     await keepAwake();
     channel.send({ type: MSG.HELLO, ear, label: navigator.userAgent.slice(0, 60) });
     lastHello = performance.now();
     setInterval(loop, CONFIG.ear.analysisMs);
+  });
+
+  // Muffled-voice mode: also detect quiet, dull, voiced sounds (a person behind rubble).
+  // OFF by default because normal talking near the phone would trigger it during the pitch.
+  $('muffledBtn').addEventListener('click', () => {
+    detector.setMuffled(!detector.muffledOn);
+    $('muffledBtn').textContent = detector.muffledOn ? '🔊 Muffled-voice mode: ON' : '🔇 Muffled-voice mode: OFF';
   });
 
   // --- Camera "eyes" (optional; independent of the microphone) ---------------
@@ -123,9 +131,10 @@ function runEar(room, ear) {
 
   function loop() {
     const at = performance.now();
-    const { db, bandRatio } = mic.read();
+    const features = mic.read();
+    const { db, bandRatio } = features;
     const floorDb = floor.push(db);
-    const { score, event } = detector.update({ db, floorDb, bandRatio }, at);
+    const { score, event } = detector.update({ ...features, floorDb }, at);
 
     const cal = calibrator.update(db, at);
     if (cal?.done === 'floor') $('sub').textContent = `Noise floor ${cal.floorDb.toFixed(0)} dB. Waiting for the clap…`;
@@ -137,7 +146,7 @@ function runEar(room, ear) {
     if (event) {
       channel.send({ type: MSG.SCREAM, ear, t: Date.now(), ...event });
       sent += 1;
-      $('countText').textContent = `${sent} sent`;
+      $('countText').textContent = `${sent} sent · last: ${event.kind === 'muffled' ? 'muffled voice' : 'scream'}`;
       flash();
     }
 
@@ -150,6 +159,15 @@ function runEar(room, ear) {
       channel.send({ type: MSG.HELLO, ear });
     }
     render(db, floorDb, score);
+    $('sound').textContent = describeSound(features, floorDb);
+  }
+
+  // What the phone thinks it hears right now (helps tune on the day)
+  function describeSound(f, floorDb) {
+    if (f.db < floorDb + 6) return 'quiet';
+    if (f.flatness > 0.5 && f.clarity < 0.5) return 'noise (water / rain / wind / rotor)';
+    if (f.clarity >= 0.6) return `voice-like · pitch ${f.pitchHz.toFixed(0)} Hz`;
+    return 'sound';
   }
 
   function onMessage(msg) {
