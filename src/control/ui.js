@@ -379,7 +379,7 @@ export function createUI(root, opts) {
     },
     /** { cols, rows, cellM } */
     setArea({ cols, rows, cellM }) {
-      const w = cols * cellM, h = rows * cellM, f = m => (m >= 1000 ? `${(m / 1000).toFixed(1)}km` : `${m}m`);
+      const w = cols * cellM, h = rows * cellM, f = m => (m >= 1000 ? `${(m / 1000).toFixed(1)}km` : `${Math.round(m)}m`);
       $('[data-t="area"]', root).textContent = `${f(w)}×${f(h)} · ${((w * h) / 1e6).toFixed(2)} km²`;
     },
     setSelecting(on) {

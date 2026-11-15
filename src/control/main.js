@@ -249,7 +249,9 @@ const MAX_CELLS_SIDE = 40;
 const DEFAULT_BOX_M = 250;     // a plain click (no drag) drops a square this size
 function makeArea(b) {          // b = { x0, y0, x1, y1 } in local metres
   const wM = b.x1 - b.x0, hM = b.y1 - b.y0, base = BASE_CONFIG.grid.cellMeters;
-  const cell = Math.max(base, Math.ceil(Math.max(wM, hM) / MAX_CELLS_SIDE / 10) * 10);
+  // fit the box the operator drew: the long side exactly, the other within half a cell
+  const target = Math.max(base, Math.ceil(Math.max(wM, hM) / MAX_CELLS_SIDE / 10) * 10);
+  const longM = Math.max(wM, hM), cell = longM / Math.max(2, Math.round(longM / target));
   const cols = Math.max(2, Math.round(wM / cell)), rows = Math.max(2, Math.round(hM / cell));
   const cfg = { ...CONFIG, grid: { ...CONFIG.grid, cols, rows, cellMeters: cell } };
   const grid = S.createGrid(cfg, null), n = cols * rows;   // null cover: the shared cover map only fits the default grid
@@ -414,12 +416,13 @@ function setSearchArea(bounds) {
   const wM = (bounds.getEast() - bounds.getWest()) * k, hM = (bounds.getNorth() - bounds.getSouth()) * 111320;
   if (wM < 60 || hM < 60) { ui.log('Area too small: drag at least 60 m × 60 m', 'warn'); return; }
   const base = BASE_CONFIG.grid.cellMeters;
-  const cell = Math.max(base, Math.ceil(Math.max(wM, hM) / MAX_CELLS_SIDE / 10) * 10);
+  const target = Math.max(base, Math.ceil(Math.max(wM, hM) / MAX_CELLS_SIDE / 10) * 10);
+  const longM = Math.max(wM, hM), cell = longM / Math.max(2, Math.round(longM / target));   // fits the drawn box
   CONFIG.grid = { ...CONFIG.grid, cellMeters: cell, cols: Math.max(2, Math.round(wM / cell)), rows: Math.max(2, Math.round(hM / cell)) };
   CONFIG.map.center = [c.lat, c.lng];
   reset();
   const km2 = (CONFIG.grid.cols * CONFIG.grid.rows * cell * cell) / 1e6;
-  ui.log(`Search area set: ${(CONFIG.grid.cols * cell / 1000).toFixed(2)} × ${(CONFIG.grid.rows * cell / 1000).toFixed(2)} km (${km2.toFixed(2)} km²) · ${cell} m cells`, 'family');
+  ui.log(`Search area set: ${(CONFIG.grid.cols * cell / 1000).toFixed(2)} × ${(CONFIG.grid.rows * cell / 1000).toFixed(2)} km (${km2.toFixed(2)} km²) · ${Math.round(cell)} m cells`, 'family');
 }
 
 function reset() {
@@ -498,7 +501,7 @@ function setDroneArea(d, bounds) {
   if (d.status === 'active' && d.drone.state.mode !== 'investigate') { d.current = null; d.drone.setTarget(null); }
   rebuildGrids(); redrawGrid();
   const { cols, rows, cellMeters } = d.area.cfg.grid;
-  ui.log(`<b>${d.id}</b> area set: ${cols * cellMeters} × ${rows * cellMeters} m (${cols * rows} cells)`, 'area');
+  ui.log(`<b>${d.id}</b> area set: ${Math.round(cols * cellMeters)} × ${Math.round(rows * cellMeters)} m (${cols * rows} cells)`, 'area');
 }
 
 function toggleHold(d) {
