@@ -281,8 +281,9 @@ function handleDetection(det) {
   view.showBearing(xy, abs, R);
   if (firstDetMs == null && t0Sim != null) firstDetMs = simMs - t0Sim;
   ui.log(`🔴 Detection · bearing ${det.relBearingDeg >= 0 ? '+' : ''}${det.relBearingDeg.toFixed(0)}° rel (${abs.toFixed(0)}° abs) · conf ${(det.confidence * 100).toFixed(0)}%`, 'det');
-  // mark survivors found by a pin landing near them
-  for (const s of survivors) if (!s.found && Math.hypot(s.x - pinXY.x, s.y - pinXY.y) <= FOUND_PIN_M) markFound(s, 'pin');
+  // mark survivors found by a pin landing near them (simulated button screams aren't a real voice, so they never "find" anyone)
+  if (det.source !== 'sim')
+    for (const s of survivors) if (!s.found && Math.hypot(s.x - pinXY.x, s.y - pinXY.y) <= FOUND_PIN_M) markFound(s, 'pin');
   // turn and investigate along the bearing
   current = { i: -1, ...pinXY };
   drone.setTarget(pinXY, 'investigate');
