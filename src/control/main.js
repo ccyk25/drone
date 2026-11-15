@@ -484,8 +484,9 @@ async function calibrate() {
   const peaks = calibPeaks; calibPeaks = null;
   if (Object.keys(peaks).length === 0) { ui.setCalibStatus('No clap heard. Try again.'); return; }
   const gains = computeGains(peaks);
+  fusion.setGains?.(gains);                       // apply to direction finding (was computed but never used)
   channel.send({ type: 'calibrate', phase: 'done', gains });
-  ui.setCalibStatus(`Gains: ${Object.entries(gains).map(([k, v]) => `${k} ${v >= 0 ? '+' : ''}${v} dB`).join(' · ')}`);
+  ui.setCalibStatus(`Gains: ${Object.entries(gains).map(([k, v]) => { const db = 20 * Math.log10(v); return `${k} ${db >= 0 ? '+' : ''}${db.toFixed(1)} dB`; }).join(' · ')}`);
   ui.log('Calibration done');
 }
 
