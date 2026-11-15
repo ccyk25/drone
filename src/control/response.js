@@ -59,6 +59,7 @@ export function createResponder(env) {
     const [text, bg] = PHASES[p];
     banner.innerHTML = `<span style="color:${bg}">${text}</span>` + (extra ? `<div style="font:500 12px var(--ui,system-ui);letter-spacing:0;text-transform:none;color:var(--muted,#8a929c);margin-top:3px">${extra}</div>` : '');
     banner.style.borderColor = p === 'search' ? 'var(--line-2,rgba(255,255,255,.16))' : bg;
+    banner.style.display = p === 'search' ? 'none' : '';   // only shown during a live rescue response (no clutter over alerts)
   }
   setPhase('search', 0);
 

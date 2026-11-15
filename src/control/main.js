@@ -21,7 +21,7 @@ export const MOCKS = urlParams.has('mocks') ? urlParams.get('mocks') !== '0' : f
 
 // ---- timing knobs (P2-only; not in config.js) ----
 const SCAN_EVERY_MS = 1000;   // negative scan = one "listen" per simulated second
-const CALL_EVERY_MS = 3000;   // a hidden survivor tries to call out this often
+const CALL_EVERY_MS = 1000;   // every hidden survivor gets a chance to call each simulated second (matches the engine's callProb)   // a hidden survivor tries to call out this often
 const PIN_MERGE_MS = 1500;    // detections closer together than this re-use the investigation
 const EST_RANGE_FRAC = 0.5;   // pin placed at this fraction of hearing radius along the bearing
 const FOUND_PIN_M = 50, FOUND_PASS_M = 30;
@@ -567,7 +567,19 @@ function handleDetection(det, d = sel()) {
   // mark survivors found by a pin landing near them (simulated button screams aren't a real voice, so they never "find" anyone)
   if (det.source !== 'sim')
     for (const s of survivors) if (!s.found && Math.hypot(s.x - pinXY.x, s.y - pinXY.y) <= FOUND_PIN_M) markFound(s, 'pin', d);
-  // turn and investigate along the bearing
+  // turn and investigate along the bearing, but never leave this drone's own sector: a voice from a
+  // neighbouring sector has already raised that sector's map (detectAll), so its own drone goes to check
+  const ab = d.area.bounds;
+  const inside = pinXY.x >= ab.x0 && pinXY.x <= ab.x1 && pinXY.y >= ab.y0 && pinXY.y <= ab.y1;
+  if (!inside && fleet.length > 1) {
+    const owner = fleet.find(o => o !== d && pinXY.x >= o.area.bounds.x0 && pinXY.x <= o.area.bounds.x1 && pinXY.y >= o.area.bounds.y0 && pinXY.y <= o.area.bounds.y1);
+    if (owner) {
+      if (owner.status === 'active' && owner.drone.state.mode !== 'investigate') { owner.current = { i: -1, ...pinXY }; owner.drone.setTarget(pinXY, 'investigate'); }
+      if (d.id === selId || owner.id === selId) ui.log(`<b>${d.id}</b> heard a voice in <b>${owner.id}</b>'s sector · ${owner.id} investigates, ${d.id} keeps searching its own area`, 'muted');
+      lastDetAt = simMs; redrawGrid();
+      return;
+    }
+  }
   d.status = 'active';
   d.current = { i: -1, ...pinXY };
   drone.setTarget(pinXY, 'investigate');
@@ -664,16 +676,20 @@ function pushSwarmUiThrottled() { const now = performance.now(); if (now - lastS
 // hidden survivors occasionally call out; heard with the engine's own POD
 function survivorCalls(d) {
   if ((responder.busy() && d === respD) || Object.values(ears).some(e => Date.now() - e.last < 5000)) return;   // live demo: real people only
-  const pending = survivors.filter(s => !s.found);
-  if (!pending.length) return;
-  const s = pending[Math.random() * pending.length | 0];
+  // each hidden survivor calls out ~30% of seconds (CONFIG.sensors.audio.callProb), heard with the engine's POD,
+  // so the simulation behaves the way the trust map assumes (no 'cleared' cells hiding unfound people)
+  const callProb = CONFIG.sensors?.audio?.callProb ?? 0.3;
   const st = d.drone.state;
-  const dist = Math.hypot(s.x - st.x, s.y - st.y);
-  if (dist > CONFIG.pod.hearingRadiusM) return;
-  const pod = S.podFor(dist, currentNoiseDb(), CONFIG);
-  if (Math.random() >= pod) return;
-  const rel = wrapDeg(bearingTo(st, s) - st.headingDeg);
-  handleDetection({ type: 'detection', t: Date.now(), relBearingDeg: rel, confidence: Math.min(0.95, 0.35 + 0.6 * pod), ears: ['sim'], source: 'survivor' }, d);
+  for (const s of survivors) {
+    if (s.found || s.queued) continue;
+    const dist = Math.hypot(s.x - st.x, s.y - st.y);
+    if (dist > CONFIG.pod.hearingRadiusM) continue;
+    const pod = S.podFor(dist, currentNoiseDb(), CONFIG);
+    if (Math.random() >= pod * callProb) continue;
+    const rel = wrapDeg(bearingTo(st, s) - st.headingDeg);
+    handleDetection({ type: 'detection', t: Date.now(), relBearingDeg: rel, confidence: Math.min(0.95, 0.35 + 0.6 * pod), ears: ['sim'], source: 'survivor' }, d);
+    return;                                              // one detection per drone per second keeps the feed readable
+  }
 }
 
 // ---- live rescue response (P1) ----
