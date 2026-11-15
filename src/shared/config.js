@@ -23,7 +23,9 @@ export const CONFIG = {
   // Only a LOUD, bright, sustained shout counts. 'Field' sensitivity (above, lab-validated on
   // flood recordings) is available on the phone with the Sensitivity button.
   // (tuned on the day: 'talking' measured +4 dB over the room → rejected; a real shout is well above +7)
-  screamDemo: { minNoveltyDb: 12, minAboveFloorDb: 7, minLevelDb: -38, minClarity: 0.55, minVoicedMs: 350, windowMs: 900 },
+  // DEMO: simple and reliable on stage: a LOUD sound near this phone (>= 10 dB over the room for >= 0.25 s).
+  // Talking (+4 dB measured) and single claps (< 0.25 s) don't count. Field mode keeps the pitch checks.
+  screamDemo: { simpleLoud: true, minAboveFloorDb: 10, minLevelDb: -45, minVoicedMs: 250, windowMs: 700 },
   // Muffled voice behind rubble/walls: high frequencies lost, so use the wider voice band;
   // calls are short syllables, so count voiced time within a window instead of continuous sound.
   // (A spoken "help" has only ~100–150 ms of clearly voiced sound, so two calls within 2.5 s = 200 ms.)

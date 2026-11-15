@@ -76,6 +76,7 @@ export function screamScore({ noveltyBrightDb = 0, noveltyVoiceDb = 0, clarity =
 const inPitch = (f, cfg) => f.pitchHz >= cfg.minPitchHz && f.pitchHz <= cfg.maxPitchHz;
 
 export function isClearScream(f, cfg = CONFIG.scream) {
+  if (cfg.simpleLoud) return f.db >= f.floorDb + cfg.minAboveFloorDb && (cfg.minLevelDb == null || f.db >= cfg.minLevelDb);
   return (f.noveltyBrightDb ?? -Infinity) >= cfg.minNoveltyDb && (f.clarity ?? 0) >= cfg.minClarity && inPitch(f, cfg)
     // demo sensitivity only: also loud overall, well above the room's background
     && (cfg.minAboveFloorDb == null || f.db >= f.floorDb + cfg.minAboveFloorDb)

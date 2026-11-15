@@ -80,9 +80,12 @@ export function createFusion(config = CONFIG, { onDetection, autoFlush = true } 
       relBearingDeg = 0;
       confidence = baseConf / 2;
     } else {
-      relBearingDeg = bearingFromLevels(adjusted, config);
-      const sorted = heard.map((e) => adjusted[e]).sort((a, b) => b - a);
-      confidence = baseConf * clamp((sorted[0] - sorted[1]) / 10, 0.3, 1);
+      // Turn toward the phone that heard it loudest (clear for the audience: left phone → left).
+      // Within 2 dB of each other → straight ahead.
+      const sorted = heard.slice().sort((a, b) => adjusted[b] - adjusted[a]);
+      const gap = adjusted[sorted[0]] - adjusted[sorted[1]];
+      relBearingDeg = gap < 2 ? 0 : config.ears[sorted[0]];
+      confidence = baseConf * clamp(gap / 10, 0.3, 1);
     }
 
     onDetection?.({

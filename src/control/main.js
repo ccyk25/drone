@@ -767,6 +767,17 @@ window.addEventListener('keydown', (ev) => {
     ui.log(m === 'swarm' ? 'Swarm mode: 5 search drones share one probability map' : 'Single-drone mode: D1 searches the whole area', 'area');
   });
   window.__paintFleet = paint;
+  // ✕ Clear area: drop any selected/drawn area and go back to the scenario's default search area
+  const clr = document.createElement('button');
+  clr.className = 'btn sm'; clr.textContent = '✕ Clear area'; clr.title = 'Remove any selected area and go back to the default search area';
+  clr.addEventListener('click', () => {
+    if (responder.busy()) { ui.log('Finish the current rescue response first', 'warn'); return; }
+    cancelSelect?.(); cancelSelect = null;
+    CONFIG = withScenario(scenarioId, site);
+    respD = null; reset(); paint(); pushSwarmUi();
+    ui.log('Search area cleared · back to the default area', 'area');
+  });
+  act?.insertBefore(clr, act.querySelector('[data-act="d-hold"]'));
   paint();
 }
 
