@@ -556,3 +556,46 @@ The recordings are a flooded river, heavy rain, a summer downpour, two real scre
 | Turn off Vercel auto-deploy before 2.55pm | ❌ Pending | Vercel account owner |
 
 **Bottom line:** the sensing works. **The part that answers the problem statement (the trust map on a screen) does not exist yet.** It must be running by about 2.00pm to record the video.
+
+---
+
+## 17. Camera results and the P2 link (12.55)
+
+### Camera eyes on real photos (`/lab.html`, the second section)
+
+This is the same detector the phones run (COCO-SSD lite, in the browser).
+
+| Photo | Result |
+|---|---|
+| Woman trapped on a car roof in a flash flood | ✅ Found, 77% |
+| Flood rescue scene | ✅ Found, 99% |
+| Rescuer carrying a boy (Katrina) | ✅ Found, 99% |
+| Satellite flood image, no people | ✅ No false alarm |
+| Helicopter rescue seen from a distance | ❌ Missed (also with 3×3 and 4×4 tiles) |
+| Drone's-eye view, small people | ❌ Missed. 4×4 tiles found 1 of several at 64%, and took 3.8 s |
+
+**What this means (put it in the pitch):** a general-purpose camera model finds people **up close** but **not from drone height**. So:
+- **Ears find, eyes confirm.** The microphones locate survivors from altitude, and the camera confirms at close range, for example a camera on the lowered **drop-ear pod**.
+- **Next step:** retrain the camera model on aerial search-and-rescue datasets (HERIDAL, SARD) for drone-height detection.
+- **Practical:** the model is about 5 MB. It took **about 25 s** to load the first time on laptop Wi-Fi; after that it's cached. **Tap "📷 Add eyes" on the demo phone a minute before you present.**
+
+### P2: connect the phones in a few lines (`src/control/ears.js`)
+
+```js
+import { connectEars } from './ears.js';
+const ears = connectEars({
+  onDetection: (d) => {
+    const abs = drone.state.headingDeg + d.relBearingDeg;   // absolute direction
+    // turn the drone toward abs, drop a pin with d.confidence, then
+    // search.applyDetection(grid, droneXY, abs, d.confidence)
+  },
+  onEarStatus: (connected) => showEars(connected),          // e.g. ['L','C','R']
+  onLog: (line) => addToLog(line)
+});
+// ears.room → show on screen · ears.earUrl('L') → QR code (the qrcode package is installed)
+// ears.noiseFloorDb() → feed into POD so noisy areas stay amber
+// ears.calibrate.start() / .clap() / .apply() → Calibrate button
+// ears.simulateScream('L') / ears.simulateSighting('C') → demo fallback buttons
+```
+
+It's tested: a simulated scream near L gives a direction below −20°, and a sighting gives a camera detection.

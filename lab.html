@@ -28,6 +28,21 @@
       <button class="ghost" data-play="voice-help.ogg">▶ voice-help.ogg</button>
     </div>
     <div class="wrap" id="out"></div>
+
+    <h1 style="margin-top:28px">Camera eyes lab</h1>
+    <p>Runs the <b>same person detector the phones use</b> (COCO-SSD lite, in the browser) on real flood and rescue photos, plus a drone's-eye view and a no-people satellite image. Red boxes = whole image; orange = tiled (image cut into 4 overlapping tiles so small, distant people get found). Photos: Wikimedia Commons, credited in /images/ATTRIBUTION.md.</p>
+    <button id="runCam">Run camera tests</button><span id="camStatus" style="margin-left:8px;color:#8a96a3"></span>
+    <div id="camOut" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-top:12px"></div>
+    <style>figure{margin:0;background:#121923;border-radius:12px;overflow:hidden} figure canvas{width:100%;display:block} figcaption{padding:8px 10px;font-size:13px} figcaption small{color:#8a96a3}</style>
+    <script type="module">
+      import { runCameraLab } from '/src/lab/camera.js';
+      document.getElementById('runCam').onclick = async () => {
+        const s = document.getElementById('camStatus');
+        s.textContent = 'Loading detector (about 5 MB, first time only)…';
+        const r = await runCameraLab(document.getElementById('camOut'));
+        s.textContent = `Model loaded in ${(r.loadMs / 1000).toFixed(1)} s · ${r.rows.filter((x) => x.pass).length}/${r.rows.length} pass`;
+      };
+    </script>
     <script type="module" src="/src/lab/main.js"></script>
   </body>
 </html>
