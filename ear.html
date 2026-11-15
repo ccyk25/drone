@@ -37,6 +37,14 @@
       .eye video, .eye canvas { width:100%; display:block; }
       .eye canvas { position:absolute; inset:0; height:100%; }
       .eye .tag { position:absolute; left:8px; bottom:8px; background:rgba(0,0,0,.6); padding:4px 8px; border-radius:8px; font-size:13px; }
+      .eyebig { position:absolute; top:10px; left:10px; right:10px; text-align:center; font-size:30px; font-weight:800;
+        padding:8px; border-radius:12px; background:rgba(0,0,0,.55); transition: background .15s; }
+      .eyebig.person { background:rgba(46,204,113,.9); color:#06150c; }
+      .eye img.src { width:100%; display:block; }
+      /* Eyes mode (ear.html?...&mode=eyes): full-screen camera for the "point the phone at someone" demo */
+      body.eyes-mode #earBox, body.eyes-mode .bars, body.eyes-mode #muffledBtn, body.eyes-mode .bars + .label { display:none !important; }
+      body.eyes-mode .eye { flex:1; min-height:60vh; }
+      body.eyes-mode .eye video, body.eyes-mode .eye img.src { height:100%; object-fit:cover; }
     </style>
   </head>
   <body>
@@ -76,6 +84,7 @@
       <div id="eyeBox" class="eye hidden">
         <video id="cam" playsinline muted></video>
         <canvas id="camOverlay"></canvas>
+        <div id="eyeBig" class="eyebig">Looking…</div>
         <div id="eyeStatus" class="tag">Loading eyes…</div>
       </div>
       <button id="eyeBtn" class="ghost">📷 Add eyes (camera)</button>
