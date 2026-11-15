@@ -337,7 +337,7 @@ const ui = createUI(document.getElementById('hud'), {
   sites: Object.fromEntries(Object.entries(SCENARIOS).map(([k, v]) => [k, v.sites.map(({ id, name, event }) => ({ id, name, event }))])),
   earUrl: ear => new URL(`ear.html?room=${ROOM}&ear=${ear}${ear === 'C' ? '&mode=eyes' : ''}`, location.href).href,   // C = camera phone (eyes mode)
   handlers: {
-    onStart: () => { running = !running; ui.setStarted(running); if (running && t0Sim == null) t0Sim = simMs; ui.log(running ? 'Search started' : 'Paused'); },
+    onStart: () => { running = !running; liveOnly = false; ui.setStarted(running); if (running && t0Sim == null) t0Sim = simMs; ui.log(running ? 'Search started' : 'Paused'); },
     onReset: () => reset(),
     onSimScream: ear => {
       ui.log(`Simulated scream on <b>${sel().id}</b> ear <b>${ear}</b>`, 'sim');
@@ -394,6 +394,7 @@ const ui = createUI(document.getElementById('hud'), {
   },
 });
 
+let liveOnly = false;   // a live phone detection while paused runs ONLY the rescue response, not the simulation
 let running = false, rotorOn = false, reveal = false, familyMode = false, speed = 2;
 let simMs = 0, t0Sim = null, firstDetMs = null, scanAcc = 0, callAcc = 0, lastDetAt = -1e9;
 let survivors = [], cancelSelect = null, placeQueue = [], mission = null, basePad = null;
@@ -567,7 +568,7 @@ function handleDetection(det, d = sel()) {
     if (!responder.busy()) respD = sel();              // the selected drone flies the response
     d = respD;
     if (d.status === 'landed' || d.status === 'rtb') { ui.log(`<b>${d.id}</b> is on the ground: select a flying drone to respond`, 'warn'); return; }
-    if (!running) { running = true; ui.setStarted(true); if (t0Sim == null) t0Sim = simMs; }
+    if (!running) { running = true; liveOnly = true; ui.log('Live response · simulation stays off (press Start search to run it)', 'muted'); }
     if (firstDetMs == null && t0Sim != null) firstDetMs = simMs - t0Sim;
     responder.onDetection(det, performance.now());
     redrawGrid();
@@ -940,8 +941,8 @@ function loop() {
     // people layer: hidden survivors call out; close passes in quiet find them
     // simulated survivors are only heard / found once the drone is over its own search area (not while transiting)
     const onStation = inOwnArea(d, xy);
-    if (callNow && onStation) survivorCalls(d);
-    if (!rotorOn && onStation) for (const s of survivors) if (!s.found && Math.hypot(s.x - xy.x, s.y - xy.y) <= FOUND_PASS_M) markFound(s, 'pass', d);
+    if (callNow && onStation && !liveOnly) survivorCalls(d);
+    if (!rotorOn && onStation && !liveOnly) for (const s of survivors) if (!s.found && Math.hypot(s.x - xy.x, s.y - xy.y) <= FOUND_PASS_M) markFound(s, 'pass', d);
 
     // P1's live response owns its drone while busy
     if (d === respD) {
@@ -949,6 +950,7 @@ function loop() {
       else if (responder.busy()) continue;
     }
     if (d.status !== 'active') continue;
+    if (liveOnly) continue;                              // live response only: hover when done, no search pattern
 
     // 3. next waypoint inside this drone's own area, on arrival (or if it has none)
     if (arrived || !drone.target) {
