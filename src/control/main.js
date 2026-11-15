@@ -729,6 +729,8 @@ window.addEventListener('keydown', (ev) => {
   seg.innerHTML = '<button class="btn sm toggle" data-fleet="single" title="One drone (live demo with the phones)">Single</button>' +
                   '<button class="btn sm toggle" data-fleet="swarm" title="Five drones sharing one probability map">Swarm · 5</button>';
   act?.prepend(seg);
+  // Demo: the swarm is hidden (single drone only). Open with ?fleet=swarm to see/test it.
+  if (fleetMode !== 'swarm') seg.style.display = 'none';
   const paint = () => {
     seg.querySelectorAll('[data-fleet]').forEach(b => b.classList.toggle('on', b.dataset.fleet === fleetMode));
     const all = document.querySelector('[data-act="d-all"]'); if (all) all.style.display = fleetMode === 'swarm' ? '' : 'none';
