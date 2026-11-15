@@ -12,6 +12,7 @@ import { createMap, setOrigin, xyToLatLng, latLngToXY } from './map.js';
 import { createDrone, bearingTo, wrapDeg } from './drone.js';
 import { startRotorNoise, stopRotorNoise, setRotorVolume } from './noise.js';
 import { createUI } from './ui.js';
+import { createOps } from './ops.js';
 
 const urlParams = new URLSearchParams(location.search);
 export const MOCKS = urlParams.has('mocks') ? urlParams.get('mocks') !== '0' : true;
@@ -50,51 +51,56 @@ const FALLBACK_CONFIG = {
 };
 const BASE_CONFIG = realConfig?.CONFIG || realConfig?.default || FALLBACK_CONFIG;
 
-// ---- disaster scenarios (P2 sim layer): survivors, hazard overlay, acoustic tweaks ----
-// Offsets (dx, dy) are metres from the grid centre. Overrides are applied to a COPY of the shared config.
+// ---- disaster scenarios (P2 sim layer) ----
+// Each scenario has one or more REAL post-disaster sites (aerial/satellite imagery taken days after the event).
+// Survivors are simulated ground truth, placed as fractions (fx, fy in -0.5..0.5) of the search area,
+// so they stay inside whatever area the operator draws. Acoustic overrides go onto a COPY of the shared config.
+const NOAA = 'Post-event imagery: <a href="https://storms.ngs.noaa.gov/">NOAA NGS Emergency Response</a>';
+const MAXAR = 'Post-event imagery: <a href="https://www.maxar.com/open-data">Maxar Open Data</a> via <a href="https://openaerialmap.org/">OpenAerialMap</a> (CC BY-NC 4.0)';
 const SCENARIOS = {
   flood: {
     ambientDb: -54,                 // rain + moving water when no phone reports a floor
     pod: { hearingRadiusM: 150 },   // voices carry over open water
-    survivors: [
-      { id: 'f1', label: 'Pak Ali (rooftop)', dx: -210, dy: 120 },
-      { id: 'f2', label: 'Mak Siti (attic window)', dx: 160, dy: 140 },
-      { id: 'f3', label: 'Child on car roof', dx: 240, dy: -150 },
-      { id: 'f4', label: 'Elderly man (2nd floor)', dx: -60, dy: -170 },
-      { id: 'f5', label: 'Teen on water tank', dx: 40, dy: 30 },
+    sites: [
+      { id: 'grandisle', name: 'Grand Isle, Louisiana', event: 'Hurricane Ida · 31 Aug 2021', center: [29.2365, -89.9990],
+        imagery: { url: 'https://stormscdn.ngs.noaa.gov/20210831a-rgb/{z}/{x}/{y}', attribution: NOAA, maxNativeZoom: 19 } },
     ],
-    hazards: [
-      { kind: 'water', dx: -140, dy: 40, r: 190 }, { kind: 'water', dx: 150, dy: -70, r: 200 },
-      { kind: 'water', dx: 60, dy: 150, r: 130 }, { kind: 'water', dx: -40, dy: -160, r: 110 },
+    survivors: [
+      { id: 'f1', label: 'Family on raised camp house', fx: -0.35, fy: 0.3 },
+      { id: 'f2', label: 'Man in attic, cut through roof', fx: 0.27, fy: 0.35 },
+      { id: 'f3', label: 'Child on pickup roof', fx: 0.4, fy: -0.38 },
+      { id: 'f4', label: 'Elderly woman, 2nd floor', fx: -0.1, fy: -0.42 },
+      { id: 'f5', label: 'Teen on water tank', fx: 0.07, fy: 0.08 },
     ],
   },
   collapse: {
     ambientDb: -62,                                      // streets go quiet after the shaking
     pod: { hearingRadiusM: 100, max: 0.85, falloffM: 35 }, // debris muffles trapped voices: only close passes can clear a cell
-    survivors: [
-      { id: 'c1', label: 'Shopkeeper under slab', dx: -180, dy: 90 },
-      { id: 'c2', label: 'Mother & baby (stairwell void)', dx: 120, dy: 160 },
-      { id: 'c3', label: 'Student in collapsed classroom', dx: 220, dy: -120 },
-      { id: 'c4', label: 'Elderly woman (kitchen void)', dx: -90, dy: -150 },
-      { id: 'c5', label: 'Worker pinned by beam', dx: 30, dy: 20 },
+    sites: [
+      { id: 'antakya', name: 'Antakya, Türkiye', event: 'Earthquake · imaged 8 Feb 2023', center: [36.2045, 36.1585],
+        imagery: { url: 'https://tiles.openaerialmap.org/63ec9ccaca43600005f4d968/0/63ec9ccaca43600005f4d969/{z}/{x}/{y}', attribution: MAXAR, maxNativeZoom: 18 } },
+      { id: 'fortmyers', name: 'Fort Myers Beach, Florida', event: 'Hurricane Ian · 30 Sep 2022', center: [26.4505, -81.9470],
+        imagery: { url: 'https://stormscdn.ngs.noaa.gov/20220930d-rgb/{z}/{x}/{y}', attribution: NOAA, maxNativeZoom: 19 } },
     ],
-    hazards: [
-      { kind: 'rubble', dx: -180, dy: 90, r: 45, label: 'Shophouse row collapsed' },
-      { kind: 'rubble', dx: 120, dy: 160, r: 50, label: 'Apartment block, partial collapse' },
-      { kind: 'rubble', dx: 220, dy: -120, r: 55, label: 'School wing collapsed' },
-      { kind: 'rubble', dx: -90, dy: -150, r: 40, label: 'Terrace house pancaked' },
-      { kind: 'rubble', dx: 30, dy: 20, r: 35, label: 'Warehouse roof down' },
-      { kind: 'rubble', dx: -10, dy: -60, r: 30, label: 'Debris field' },
+    survivors: [
+      { id: 'c1', label: 'Shopkeeper under slab', fx: -0.3, fy: 0.22 },
+      { id: 'c2', label: 'Mother & baby (stairwell void)', fx: 0.2, fy: 0.4 },
+      { id: 'c3', label: 'Student in collapsed classroom', fx: 0.37, fy: -0.3 },
+      { id: 'c4', label: 'Elderly woman (kitchen void)', fx: -0.15, fy: -0.37 },
+      { id: 'c5', label: 'Worker pinned by beam', fx: 0.05, fy: 0.05 },
     ],
   },
 };
+const siteOf = (scn, siteId) => SCENARIOS[scn].sites.find(s => s.id === siteId) || SCENARIOS[scn].sites[0];
 let scenarioId = SCENARIOS[urlParams.get('scenario')] ? urlParams.get('scenario') : 'flood';
-const withScenario = id => {
+let site = siteOf(scenarioId, urlParams.get('site'));
+const withScenario = (id, st) => {
   const c = JSON.parse(JSON.stringify(BASE_CONFIG));
   Object.assign(c.pod, SCENARIOS[id].pod);
+  c.map.center = st.center.slice();
   return c;
 };
-let CONFIG = withScenario(scenarioId);
+let CONFIG = withScenario(scenarioId, site);
 const ALTITUDE_M = 60;   // simulated flight altitude, display only
 
 // =============================================================================================
@@ -224,7 +230,7 @@ const scenarioList = (!MOCKS && (realScenario?.SURVIVORS || realScenario?.defaul
 
 // ---- small adapters (tolerate slightly different return shapes from search.js) ----
 const toXY = v => Array.isArray(v) ? { x: v[0], y: v[1] } : { x: v.x, y: v.y };
-const N = CONFIG.grid.cols * CONFIG.grid.rows;
+let N = CONFIG.grid.cols * CONFIG.grid.rows;
 let grid;
 const center = i => toXY(S.cellCenter(grid, i));
 function probs() {
@@ -264,6 +270,8 @@ const view = createMap('map', CONFIG);
 const ui = createUI(document.getElementById('hud'), {
   room: ROOM,
   scenario: scenarioId,
+  site: site.id,
+  sites: Object.fromEntries(Object.entries(SCENARIOS).map(([k, v]) => [k, v.sites.map(({ id, name, event }) => ({ id, name, event }))])),
   earUrl: ear => new URL(`ear.html?room=${ROOM}&ear=${ear}`, location.href).href,
   handlers: {
     onStart: () => { running = !running; ui.setStarted(running); if (running && t0Sim == null) t0Sim = simMs; ui.log(running ? 'Search started' : 'Paused'); },
@@ -285,23 +293,55 @@ const ui = createUI(document.getElementById('hud'), {
     onSpeed: x => { speed = x; },
     onFamilyMode: on => { familyMode = on; if (on) ui.log('Click the map where the person was last seen'); },
     onCalibrate: () => calibrate(),
-    onScenario: id => {
+    onScenario: (id, siteId) => {
       scenarioId = id;
-      CONFIG = withScenario(id);
-      urlParams.set('scenario', id); history.replaceState(null, '', `${location.pathname}?${urlParams}`);
-      ui.setScenario(id);
+      site = siteOf(id, siteId);
+      CONFIG = withScenario(id, site);
+      urlParams.set('scenario', id); urlParams.set('site', site.id);
+      history.replaceState(null, '', `${location.pathname}?${urlParams}`);
+      applySite();
       reset();
-      ui.log(`Scenario: <b>${id === 'flood' ? 'Flood' : 'Collapsed buildings'}</b> · hearing radius ${CONFIG.pod.hearingRadiusM} m`, 'warn');
+      ui.log(`Scenario: <b>${id === 'flood' ? 'Flood' : 'Collapsed buildings'}</b> · ${site.name} (${site.event}) · hearing radius ${CONFIG.pod.hearingRadiusM} m`, 'warn');
+    },
+    onTab: tab => setTab(tab),
+    onSelectArea: on => {
+      if (!on) { cancelSelect?.(); cancelSelect = null; return; }
+      if (familyMode) { familyMode = false; ui.setFamilyMode(false); }
+      ui.log('Drag a rectangle on the map to set the search area', 'warn');
+      cancelSelect = view.startAreaSelect(bounds => { cancelSelect = null; ui.setSelecting(false); setSearchArea(bounds); });
     },
   },
 });
 
 let running = false, rotorOn = false, reveal = false, familyMode = false, speed = 2;
 let simMs = 0, t0Sim = null, firstDetMs = null, scanAcc = 0, callAcc = 0, lastDetAt = -1e9;
-let drone, survivors = [], current = null;
+let drone, survivors = [], current = null, cancelSelect = null;
 const ears = {}; // ear → { db, floorDb, last, screamUntil }
 
+function applySite() {
+  ui.setScenario(scenarioId, site.id);
+  view.setImagery(site.imagery);
+  ui.setSite(site);
+}
+
+// Operator-drawn search area -> grid size, cell size and centre.
+const MAX_CELLS_SIDE = 40;
+function setSearchArea(bounds) {
+  const c = bounds.getCenter();
+  const k = 111320 * Math.cos(c.lat * Math.PI / 180);
+  const wM = (bounds.getEast() - bounds.getWest()) * k, hM = (bounds.getNorth() - bounds.getSouth()) * 111320;
+  if (wM < 60 || hM < 60) { ui.log('Area too small: drag at least 60 m × 60 m', 'warn'); return; }
+  const base = BASE_CONFIG.grid.cellMeters;
+  const cell = Math.max(base, Math.ceil(Math.max(wM, hM) / MAX_CELLS_SIDE / 10) * 10);
+  CONFIG.grid = { ...CONFIG.grid, cellMeters: cell, cols: Math.max(2, Math.round(wM / cell)), rows: Math.max(2, Math.round(hM / cell)) };
+  CONFIG.map.center = [c.lat, c.lng];
+  reset();
+  const km2 = (CONFIG.grid.cols * CONFIG.grid.rows * cell * cell) / 1e6;
+  ui.log(`Search area set: ${(CONFIG.grid.cols * cell / 1000).toFixed(2)} × ${(CONFIG.grid.rows * cell / 1000).toFixed(2)} km (${km2.toFixed(2)} km²) · ${cell} m cells`, 'family');
+}
+
 function reset() {
+  N = CONFIG.grid.cols * CONFIG.grid.rows;
   grid = S.createGrid(CONFIG);
   // put the grid's centre on CONFIG.map.center, whatever origin search.js uses
   const cs = Array.from({ length: N }, (_, i) => center(i));
@@ -310,12 +350,13 @@ function reset() {
   setOrigin([lat0 - my / 111320, lng0 - mx / (111320 * Math.cos(lat0 * Math.PI / 180))]);
   const bounds = view.buildGrid(cs, CONFIG.grid.cellMeters);
   view.fitToHud(bounds);
-  view.setScenario(scenarioId, SCENARIOS[scenarioId].hazards.map(h => ({ ...h, x: mx + h.dx, y: my + h.dy })));
   const minY = Math.min(...cs.map(c => c.y));
   drone = createDrone(CONFIG, { x: mx, y: minY - CONFIG.grid.cellMeters, headingDeg: 0 });
   current = null; recent.length = 0;
-  survivors =(scenarioList || SCENARIOS[scenarioId].survivors).map((s, k) => {
-    const xy = s.lat != null ? latLngToXY([s.lat, s.lng]) : s.dx != null ? { x: mx + s.dx, y: my + s.dy } : { x: s.x, y: s.y };
+  const W = CONFIG.grid.cols * CONFIG.grid.cellMeters, H = CONFIG.grid.rows * CONFIG.grid.cellMeters;
+  survivors = (scenarioList || SCENARIOS[scenarioId].survivors).map((s, k) => {
+    const xy = s.lat != null ? latLngToXY([s.lat, s.lng]) : s.fx != null ? { x: mx + s.fx * W, y: my + s.fy * H }
+      : s.dx != null ? { x: mx + s.dx, y: my + s.dy } : { x: s.x, y: s.y };
     return { id: s.id || `s${k + 1}`, label: s.label || s.name || `Survivor ${k + 1}`, ...xy, found: false };
   });
   simMs = 0; t0Sim = null; firstDetMs = null; scanAcc = 0; callAcc = 0; lastDetAt = -1e9;
@@ -323,6 +364,7 @@ function reset() {
   view.resetTrail();
   view.updateSurvivors(survivors, reveal);
   redrawGrid(); redrawDrone();
+  ui.setArea({ cols: CONFIG.grid.cols, rows: CONFIG.grid.rows, cellM: CONFIG.grid.cellMeters });
   ui.log(`Grid ${CONFIG.grid.cols}×${CONFIG.grid.rows} ready · room ${ROOM} · ${MOCKS ? 'MOCK engine' : 'live engine'}`);
 }
 
@@ -499,6 +541,20 @@ function loop() {
   if (gridRedrawAcc >= 250) { gridRedrawAcc = 0; redrawGrid(); }
 }
 
+// ---- tabs: Mission map | Drone operation ----
+const ops = createOps(document.getElementById('hud'), {
+  onTryArea: () => { setTab('map'); if (!document.querySelector('[data-act="area"]')?.classList.contains('on')) ui.trigger('area'); },
+});
+function setTab(tab) {
+  ui.setTab(tab);
+  tab === 'ops' ? ops.show() : ops.hide();
+  const want = tab === 'ops' ? '#operation' : '';
+  if (location.hash !== want) history.replaceState(null, '', `${location.pathname}${location.search}${want}`);
+}
+window.addEventListener('hashchange', () => setTab(location.hash === '#operation' ? 'ops' : 'map'));
+
+applySite();
 reset();
+if (location.hash === '#operation') setTab('ops');
 setInterval(loop, CONFIG.drone.tickMs);
 window.GEMA = { get CONFIG() { return CONFIG; }, get scenario() { return scenarioId; },get grid() { return grid; }, get drone() { return drone; }, survivors: () => survivors, handleDetection, MOCKS, ROOM };

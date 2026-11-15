@@ -38,12 +38,16 @@ function qrInto(el, text) {
 const KIND_LABEL = { det: 'Detection', found: 'Survivor found', family: 'Family report', sim: 'Simulation', warn: 'Warning', muted: 'Navigation', '': 'System' };
 
 export function createUI(root, opts) {
-  const { room, earUrl, handlers, scenario = 'flood' } = opts;
+  const { room, earUrl, handlers, scenario = 'flood', site = null, sites = {} } = opts;
   const tz = -new Date().getTimezoneOffset() / 60;
 
   root.innerHTML = `
     <header class="topbar">
       <div class="logo">GEMA<i>.</i></div>
+      <nav class="tabs" role="tablist" aria-label="View">
+        <button role="tab" data-tab="map" aria-selected="true" class="on">Mission map</button>
+        <button role="tab" data-tab="ops" aria-selected="false">Drone operation</button>
+      </nav>
       <span class="chip inv">Sector</span>
       <span class="chip sector"><span class="k">Room</span> ${room}</span>
       <button class="scn-btn" data-act="scenario" aria-expanded="false" title="Choose disaster scenario">
@@ -56,15 +60,21 @@ export function createUI(root, opts) {
     <section class="drawer" aria-label="Scenario">
       <h4>Disaster scenario · switching resets the search</h4>
       <div class="scn-cards">${Object.entries(SCENARIO_INFO).map(([id, s]) => `
-        <button class="scn-card ${id}" data-scn="${id}">
+        <div class="scn-card ${id}" data-scn="${id}" role="button" tabindex="0">
           <span class="ttl"><span>${s.icon}</span>${s.title}</span>
           <span class="sub">${s.sub}</span>
           <ul>${s.bullets.map(b => `<li>${b}</li>`).join('')}</ul>
+          <div class="sites">${(sites[id] || []).map(st => `
+            <button class="site" data-site="${st.id}" data-of="${id}"><b>${st.name}</b><small>${st.event}</small></button>`).join('')}</div>
           <span class="sel">● ACTIVE</span>
-        </button>`).join('')}</div>
+        </div>`).join('')}</div>
+      <p class="drawer-note">Real post-disaster aerial imagery. Survivors are simulated. Toggle "Post-disaster imagery" in the layer menu to compare with before.</p>
     </section>
 
     <aside class="rail hudtxt">
+      <div class="kv site-kv"><div class="k">Site</div><div class="v sm" data-t="site">–</div><div class="ev" data-t="event"></div></div>
+      <div class="kv"><div class="k">Search area</div><div class="v sm" data-t="area">–</div></div>
+      <div class="sep"></div>
       <div class="kv2">
         <div class="kv"><div class="k">Latitude (N)</div><div class="v" data-t="lat">–</div></div>
         <div class="kv"><div class="k">Longitude (E)</div><div class="v" data-t="lng">–</div></div>
@@ -130,7 +140,7 @@ export function createUI(root, opts) {
           <button class="btn primary" data-act="start">▶ Start search</button>
           <button class="btn" data-act="reset">↺ Reset</button>
         </div>
-        <div class="row"><button class="btn" data-act="calibrate">🎚 Calibrate</button><span class="calib"></span></div>
+        <button class="btn toggle area" data-act="area" title="Drag a rectangle on the map to set the search area">⬚ Select area</button>
       </div>
       <div class="grp">
         <div class="lab">Simulate scream <em>ear</em></div>
@@ -143,7 +153,8 @@ export function createUI(root, opts) {
           <button class="btn toggle" data-act="rotor">🔊 Off</button>
           <input class="slider" type="range" data-act="volume" min="0" max="100" value="50" title="Rotor volume">
         </div>
-        <button class="btn toggle" data-act="qr">▦ Join ears (QR)</button>
+        <div class="row"><button class="btn toggle" data-act="qr">▦ Join ears</button><button class="btn" data-act="calibrate">🎚 Calibrate</button></div>
+        <span class="calib"></span>
       </div>
       <div class="grp">
         <div class="lab">Map view</div>
@@ -174,11 +185,23 @@ export function createUI(root, opts) {
   const setDrawer = open => { drawer.classList.toggle('open', open); scnBtn.setAttribute('aria-expanded', String(open)); };
   const toggleBtn = (act, on) => { const b = $(`[data-act="${act}"]`, root); b.classList.toggle('on', on); return b; };
 
+  const pick = (scn, siteId) => {
+    setDrawer(false);
+    if (scn !== current.scenario || (siteId && siteId !== current.site)) handlers.onScenario?.(scn, siteId);
+  };
+  root.addEventListener('keydown', ev => {
+    const card = ev.target.closest?.('.scn-card');
+    if (card && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); pick(card.dataset.scn); }
+  });
   root.addEventListener('click', ev => {
+    const siteBtn = ev.target.closest('[data-site]');
+    if (siteBtn) return pick(siteBtn.dataset.of, siteBtn.dataset.site);
+    const card = ev.target.closest('.scn-card');
+    if (card) return pick(card.dataset.scn);
     const b = ev.target.closest('button');
     if (!b) return;
+    if (b.dataset.tab) return handlers.onTab?.(b.dataset.tab);
     if (b.dataset.sim) return handlers.onSimScream?.(b.dataset.sim);
-    if (b.dataset.scn) { setDrawer(false); if (b.dataset.scn !== current.scenario) handlers.onScenario?.(b.dataset.scn); return; }
     if (b.dataset.view) {
       $$('[data-seg="view"] button', root).forEach(x => x.classList.toggle('on', x === b));
       return handlers.onHeatmap?.(b.dataset.view === 'heat');
@@ -196,7 +219,8 @@ export function createUI(root, opts) {
       case 'feed': $('.feed', root).classList.toggle('min'); b.textContent = $('.feed', root).classList.contains('min') ? '+' : '–'; break;
       case 'qr': toggleBtn('qr', on); qrpop.classList.toggle('open', on); break;
       case 'rotor': api.setRotor(on); handlers.onRotor?.(on); break;
-      case 'family': api.setFamilyMode(on); handlers.onFamilyMode?.(on); break;
+      case 'family': if (on) api.setSelecting(false), handlers.onSelectArea?.(false); api.setFamilyMode(on); handlers.onFamilyMode?.(on); break;
+      case 'area': api.setSelecting(on); handlers.onSelectArea?.(on); break;
       case 'follow': toggleBtn('follow', on); handlers.onFollow?.(on); break;
       case 'reveal': toggleBtn('reveal', on); handlers.onReveal?.(on); break;
     }
@@ -205,7 +229,11 @@ export function createUI(root, opts) {
   document.addEventListener('pointerdown', ev => {
     if (!drawer.contains(ev.target) && !scnBtn.contains(ev.target)) setDrawer(false);
   });
-  document.addEventListener('keydown', ev => { if (ev.key === 'Escape') { setDrawer(false); qrpop.classList.remove('open'); toggleBtn('qr', false); } });
+  document.addEventListener('keydown', ev => {
+    if (ev.key !== 'Escape') return;
+    setDrawer(false); qrpop.classList.remove('open'); toggleBtn('qr', false);
+    if ($('[data-act="area"]', root).classList.contains('on')) { api.setSelecting(false); handlers.onSelectArea?.(false); }
+  });
 
   $('[data-act="volume"]', root).addEventListener('input', ev => {
     $('[data-t="vol"]', root).textContent = `${ev.target.value}%`;
@@ -215,7 +243,7 @@ export function createUI(root, opts) {
   const logEl = $('.log', root);
   const t0 = Date.now();
   let nEvents = 0;
-  const current = { scenario };
+  const current = { scenario, site };
   const setPill = (k, text, cls = '') => { const p = $(`[data-p="${k}"]`, root); p.textContent = text; p.className = `pill ${cls}`; };
 
   const api = {
@@ -260,6 +288,27 @@ export function createUI(root, opts) {
         mode === 'investigate' ? 'r' : mode === 'search' ? 'b' : '');
     },
     setCalibStatus(text) { $('.calib', root).textContent = text || ''; },
+    setTab(tab) {
+      $$('[data-tab]', root).forEach(b => { const on = b.dataset.tab === tab; b.classList.toggle('on', on); b.setAttribute('aria-selected', String(on)); });
+      document.body.classList.toggle('tab-ops', tab === 'ops');
+      if (tab === 'ops') { setDrawer(false); qrpop.classList.remove('open'); toggleBtn('qr', false); }
+    },
+    /** press a dock/tool button programmatically, e.g. trigger('area') */
+    trigger(act) { $(`[data-act="${act}"]`, root)?.click(); },
+    setSite(st) {
+      $('[data-t="site"]', root).textContent = st.name;
+      $('[data-t="event"]', root).textContent = st.event;
+    },
+    /** { cols, rows, cellM } */
+    setArea({ cols, rows, cellM }) {
+      const w = cols * cellM, h = rows * cellM, f = m => (m >= 1000 ? `${(m / 1000).toFixed(1)}km` : `${m}m`);
+      $('[data-t="area"]', root).textContent = `${f(w)}×${f(h)} · ${((w * h) / 1e6).toFixed(2)} km²`;
+    },
+    setSelecting(on) {
+      toggleBtn('area', on);
+      document.body.classList.toggle('area-mode', on);
+      if (on) { toggleBtn('family', false); document.body.classList.remove('family-mode'); }
+    },
     setFamilyMode(on) {
       toggleBtn('family', on);
       document.body.classList.toggle('family-mode', on);
@@ -277,17 +326,20 @@ export function createUI(root, opts) {
       sb.firstElementChild.textContent = on ? 'SEARCH ACTIVE' : 'STANDBY';
       sb.lastElementChild.textContent = on ? 'running smoothly' : 'sim drone';
     },
-    setScenario(id) {
+    setScenario(id, siteId) {
       current.scenario = id;
+      current.site = siteId || (sites[id] || [])[0]?.id || null;
       const s = SCENARIO_INFO[id];
+      const st = (sites[id] || []).find(x => x.id === current.site);
       scnBtn.className = `scn-btn ${id}`;
       $('.ico', scnBtn).textContent = s.icon;
-      $('.nm', scnBtn).textContent = s.title;
+      $('.nm', scnBtn).textContent = st ? `${s.title} · ${st.name.split(',')[0]}` : s.title;
       $$('.scn-card', root).forEach(c => c.classList.toggle('on', c.dataset.scn === id));
+      $$('.site', root).forEach(b => b.classList.toggle('on', b.dataset.of === id && b.dataset.site === current.site));
       setPill('scn', id === 'flood' ? 'Flood' : 'Collapse', id === 'flood' ? 'b' : 'a');
     },
   };
-  api.setScenario(scenario);
+  api.setScenario(scenario, site);
   api.setStarted(false);
   return api;
 }

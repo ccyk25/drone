@@ -51,15 +51,73 @@ export function createMap(elId, config) {
 
   const esri = L.tileLayer(
     'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-    { maxZoom: 19, maxNativeZoom: 19, attribution: 'Tiles &copy; Esri' }
+    { maxZoom: 20, maxNativeZoom: 19, attribution: 'Pre-event basemap &copy; Esri' }
   );
   const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-    { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' });
+    { maxZoom: 20, maxNativeZoom: 19, attribution: '&copy; OpenStreetMap contributors' });
   esri.addTo(map);
-  L.control.layers({ 'Satellite (Esri)': esri, 'OpenStreetMap': osm }, {}, { position: 'topleft' }).addTo(map);
+  map.setMaxZoom(20);
+  const layers = L.control.layers({ 'Satellite (Esri, pre-event)': esri, 'OpenStreetMap': osm }, {}, { position: 'topleft' }).addTo(map);
   L.control.scale({ imperial: false, position: 'bottomleft' }).addTo(map);
 
-  const hazardLayer = L.layerGroup().addTo(map);
+  // real post-disaster imagery sits above the basemap; toggle it off in the layer control to compare before/after
+  let disaster = null;
+  function setImagery(img) {
+    if (disaster) { layers.removeLayer(disaster); map.removeLayer(disaster); disaster = null; }
+    if (!img) return;
+    disaster = L.tileLayer(img.url, { maxZoom: 20, maxNativeZoom: img.maxNativeZoom || 19, attribution: img.attribution, zIndex: 5 }).addTo(map);
+    layers.addOverlay(disaster, 'Post-disaster imagery');
+  }
+
+  /** Drag a rectangle to choose the search area. Calls onDone(LatLngBounds). Returns a cancel function. */
+  function startAreaSelect(onDone) {
+    map.dragging.disable(); map.boxZoom.disable();
+    el.classList.add('selecting');
+    let start = null, rect = null;
+    const sizeText = b => {
+      const k = M_PER_DEG_LAT * Math.cos((b.getCenter().lat * Math.PI) / 180);
+      const w = (b.getEast() - b.getWest()) * k, h = (b.getNorth() - b.getSouth()) * M_PER_DEG_LAT;
+      const f = m => (m >= 1000 ? `${(m / 1000).toFixed(2)} km` : `${m.toFixed(0)} m`);
+      return `${f(w)} × ${f(h)} · ${((w * h) / 1e6).toFixed(2)} km²`;
+    };
+    const down = e => {
+      if (e.button !== 0) return;
+      e.preventDefault(); e.stopPropagation();
+      start = map.mouseEventToLatLng(e);
+      rect = L.rectangle([start, start], { color: '#3be07c', weight: 2, dashArray: '6 4', fillColor: '#3be07c', fillOpacity: 0.1, interactive: false }).addTo(map);
+      rect.bindTooltip('', { permanent: true, direction: 'center', className: 'area-tip' }).openTooltip();
+      el.setPointerCapture?.(e.pointerId);
+    };
+    const move = e => {
+      if (!rect) return;
+      const b = L.latLngBounds(start, map.mouseEventToLatLng(e));
+      rect.setBounds(b); rect.setTooltipContent(sizeText(b)); rect.openTooltip(b.getCenter());
+    };
+    const up = e => {
+      if (!rect) return;
+      e.stopPropagation();
+      const b = rect.getBounds();
+      cancel();
+      onDone(b);
+    };
+    const stopClick = e => e.stopPropagation();
+    function cancel() {
+      el.removeEventListener('pointerdown', down, true);
+      el.removeEventListener('pointermove', move, true);
+      el.removeEventListener('pointerup', up, true);
+      setTimeout(() => el.removeEventListener('click', stopClick, true), 0);
+      if (rect) map.removeLayer(rect);
+      rect = null;
+      el.classList.remove('selecting');
+      map.dragging.enable(); map.boxZoom.enable();
+    }
+    el.addEventListener('pointerdown', down, true);
+    el.addEventListener('pointermove', move, true);
+    el.addEventListener('pointerup', up, true);
+    el.addEventListener('click', stopClick, true); // the drag must not also count as a family-report click
+    return cancel;
+  }
+
   const gridLayer = L.layerGroup().addTo(map);
   const trailLayer = L.layerGroup().addTo(map);
   const pinLayer = L.layerGroup().addTo(map);
@@ -111,30 +169,6 @@ export function createMap(elId, config) {
     const right = wide && feed ? window.innerWidth - feed.left + 16 : 16;
     const bottom = dock ? window.innerHeight - dock.top + 16 : 16;
     map.fitBounds(bounds, { paddingTopLeft: [left, top], paddingBottomRight: [right, bottom] });
-  }
-
-  /** Scenario: tint the imagery and draw hazard zones. hazards: [{kind:'water'|'rubble', x, y, r, label}] */
-  function setScenario(id, hazards = []) {
-    el.classList.remove('scn-flood', 'scn-collapse');
-    el.classList.add(`scn-${id}`);
-    hazardLayer.clearLayers();
-    for (const h of hazards) {
-      const ll = xyToLatLng(h.x, h.y);
-      const style = h.kind === 'water'
-        ? { color: '#6cc0ff', weight: 1, opacity: 0.35, fillColor: '#1d6fd0', fillOpacity: 0.2 }
-        : { color: '#e09a55', weight: 2, dashArray: '4 5', fillColor: '#6b4424', fillOpacity: 0.55 };
-      const c = L.circle(ll, { radius: h.r, interactive: h.kind !== 'water', ...style }).addTo(hazardLayer);
-      if (h.kind === 'rubble') {
-        c.bindTooltip(`🏚️ ${h.label || 'Collapsed structure'}`, { direction: 'top' });
-        // debris fragments so it reads as rubble from above
-        for (let k = 0; k < 7; k++) {
-          const a = (k / 7) * Math.PI * 2 + h.x, d = h.r * (0.25 + 0.5 * ((k * 37 + Math.abs(h.y)) % 10) / 10);
-          const cx = h.x + Math.cos(a) * d, cy = h.y + Math.sin(a) * d, s = 3 + (k % 3) * 2.5;
-          L.polygon([xyToLatLng(cx - s, cy - s * 0.6), xyToLatLng(cx + s, cy - s * 0.2), xyToLatLng(cx + s * 0.4, cy + s), xyToLatLng(cx - s * 0.8, cy + s * 0.5)],
-            { color: '#c9b49a', weight: 1, fillColor: '#8a7a68', fillOpacity: 0.85, interactive: false }).addTo(hazardLayer);
-        }
-      }
-    }
   }
 
   // ---- drone sprite ----
@@ -225,7 +259,7 @@ export function createMap(elId, config) {
   function resetTrail() { trailPts = []; trail.setLatLngs([]); pinLayer.clearLayers(); }
 
   return {
-    map, buildGrid, updateGrid, setHeatmap, fitToHud, setScenario, updateDrone, showBearing, addPin, updateSurvivors, flash, resetTrail,
+    map, buildGrid, updateGrid, setHeatmap, fitToHud, setImagery, startAreaSelect, updateDrone, showBearing, addPin, updateSurvivors, flash, resetTrail,
     setFollow(on) { follow = !!on; },
     onClick(fn) { map.on('click', e => fn(latLngToXY(e.latlng), e.latlng)); },
   };
