@@ -8,7 +8,8 @@ export const MSG = {
   LEVEL: 'level',             // ear → control  { ear, t, db, floorDb, bandRatio, screamScore }  (~8 Hz)
   SCREAM: 'scream',           // ear → control  { ear, t, peakDb, durationMs, confidence }
   CALIBRATE: 'calibrate',     // control → ears { phase: 'start'|'clap'|'done', gains? }
-  CALIBRATION: 'calibration'  // ear → control  { ear, floorDb, clapPeakDb }  (reply after the clap phase)
+  CALIBRATION: 'calibration', // ear → control  { ear, floorDb, clapPeakDb }  (reply after the clap phase)
+  SIGHTING: 'sighting'        // ear → control  { ear, t, confidence, offset }  camera saw a person; offset -1 (left) .. +1 (right)
 };
 
 export const channelName = (room) => `gema-room-${room}`;
@@ -40,6 +41,9 @@ export function validate(msg) {
           && Object.entries(msg.gains).every(([k, v]) => isEar(k) && isNum(v))));
     case MSG.CALIBRATION:
       return isEar(msg.ear) && isNum(msg.floorDb) && isNum(msg.clapPeakDb);
+    case MSG.SIGHTING:
+      return isEar(msg.ear) && isNum(msg.t) && isNum(msg.confidence) && isNum(msg.offset)
+        && msg.offset >= -1 && msg.offset <= 1;
     default:
       return false;
   }

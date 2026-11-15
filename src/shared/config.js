@@ -9,6 +9,7 @@ export const CONFIG = {
   scream: { minAboveFloorDb: 15, minBandRatio: 0.45, minDurationMs: 300, cooldownMs: 1500, gapToleranceMs: 120 },
   fusion: { windowMs: 600, sharpness: 3, staleMs: 3000, levelLookbackMs: 900 },
   calibration: { floorMs: 3000, clapListenMs: 4000 },
+  camera: { intervalMs: 600, minScore: 0.6, confirmFrames: 2, cooldownMs: 3000, halfFovDeg: 30 },
   pod: { max: 0.9, hearingRadiusM: 150, falloffM: 60, noiseRefDb: -50, noisePenaltyPerDb: 0.03 }, // REPLACE with the measured fit
   search: { detectionBoost: 6, bearingSpreadDeg: 25, familyReportBoost: 4 },
   drone: { speedMps: 15, turnRateDegPerS: 90, tickMs: 100 },

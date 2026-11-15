@@ -413,12 +413,54 @@ export const CONFIG = {
 
 1. Hook (Taman Sri Muda)
 2. Problem
-3. Insight: silence isn't safety
-4. GEMA in one picture
+3. **Insight: silence isn't safety.** Include the "which sensor works where" table from section 14
+4. GEMA in one picture: **ears (mic) and eyes (camera) feeding one trust map**
 5. Demo screenshots
 6. How it works, plus the calibration table and honesty box
 7. Simulation evidence and stakeholders
-8. Next steps and team
+8. Next steps: real mic array (like LUCY), **thermal as a third evidence layer**, CAAM approval. Team
+
+---
+
+## 14. Why microphones? (slide 3 and Q&A prep)
+
+Judges and mentors **will** ask: *"Why not thermal or lidar? Won't noise ruin a mic?"*
+
+### The 15-second answer (practise it)
+
+> *"We don't replace thermal; we cover where it's blind. Thermal and lidar need line of sight. A survivor under a roof, under rubble or in floodwater is hidden, but can still be heard. That's why rescue teams already carry listening devices like the Delsar Life Detector. And yes, noise is hard. That's exactly why GEMA never calls a noisy area 'clear.' Our engine works with any sensor: today it's ears and eyes, tomorrow thermal."*
+
+### Which sensor works where (slide 3)
+
+| Situation | Thermal camera | Lidar | Normal camera | **Microphone** |
+|---|---|---|---|---|
+| Open ground, daytime | ✅ | ❌ (it maps shapes, not who is alive) | ✅ | ✅ |
+| Under a roof or rubble | ❌ no line of sight | ❌ | ❌ | ✅ **sound travels through gaps** |
+| In or near floodwater | ❌ (water hides body heat) | ❌ | ⚠️ | ✅ |
+| Hot Malaysian afternoon | ⚠️ (warm surfaces wash people out) | ❌ | ✅ | ✅ |
+| Night, smoke, haze | ✅ | ⚠️ | ❌ | ✅ |
+| Rain | ⚠️ | ⚠️ | ⚠️ | ⚠️ noise rises, and **GEMA flags it as NOT CLEARED** |
+| Tells you someone is **alive and calling** | ❌ | ❌ | ❌ | ✅ |
+
+### Why microphones win as the first sensor
+
+- **Weatherproof and rugged:** MEMS microphones (the tiny ones in every phone) already ship in IP67/IP68 water-resistant phones. A drone mic array can be sealed behind waterproof acoustic membranes. Rain adds noise, but it doesn't kill the sensor.
+- **Cheap and light:** a MEMS mic costs a few ringgit, while a drone thermal camera costs thousands. Lighter payload means **more flight time**, which experts name as a top limit of rescue drones ([MarketScale](https://www.marketscale.com/industries/sciences/solving-thermal-limitations-for-emergency-and-first-response-uavs)).
+- **Works without line of sight:** around corners, through debris gaps, under roofs.
+- **Hears life, not just heat:** a voice or knock means *alive and responsive*.
+- **Already trusted on the ground:** rescue teams use seismic/acoustic listening devices to find live victims in collapsed structures ([Firehouse: Delsar Life Detector](https://www.firehouse.com/rescue/technical-rescue/structural-collapse/product/10181928/con-space-communications-delsar-life-detector), [Safeware: Delsar USAR kit](https://www.safewareinc.com/product/delsar-usar-kit-con-6020-01-016)). **GEMA puts that in the air.**
+- **Noise is handled honestly:** rotor-noise filtering exists ([Fraunhofer LUCY](https://www.fraunhofer.de/content/dam/zv/en/press-media/2023/december/fkie-a-drone-with-ears.pdf)). Whatever noise is left lowers POD, and the cell stays amber.
+
+### Thermal limits (for Q&A)
+
+- UK fire-service guidance lists thermal's limits: people in water, people with hypothermia, and people hidden under dense cover ([NFCC](https://nfcc.org.uk/?p=13226)).
+- Hot surfaces can wash a person out of the thermal image ([Commercial UAV News](https://commercialuavnews.com/public-safety/clearer-radiometric-thermal-imagery-can-make-a-major-difference-in-drone-public-safety-missions-and-industrial-inspections)).
+- **Be honest:** thermal is excellent in the open and at night. We **combine** sensors; we don't dismiss them.
+
+### Eyes as well as ears (now built)
+
+- The phone page has an optional **📷 camera "eyes"** mode. It runs in-browser person detection (COCO-SSD), and a person in view sends a `sighting` that the trust engine treats as strong evidence.
+- **Demo line:** *"Ears find people you can't see. Eyes confirm the people you can. One trust map for both."*
 
 ## 13. Honesty rules
 

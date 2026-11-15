@@ -33,6 +33,10 @@
       .row { display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; }
       .hidden { display:none !important; }
       .note { font-size:12px; color:var(--muted); text-align:center; }
+      .eye { position:relative; border-radius:14px; overflow:hidden; background:#000; }
+      .eye video, .eye canvas { width:100%; display:block; }
+      .eye canvas { position:absolute; inset:0; height:100%; }
+      .eye .tag { position:absolute; left:8px; bottom:8px; background:rgba(0,0,0,.6); padding:4px 8px; border-radius:8px; font-size:13px; }
     </style>
   </head>
   <body>
@@ -67,6 +71,12 @@
         </div>
       </div>
       <button id="startBtn">Tap to start listening</button>
+      <div id="eyeBox" class="eye hidden">
+        <video id="cam" playsinline muted></video>
+        <canvas id="camOverlay"></canvas>
+        <div id="eyeStatus" class="tag">Loading eyes…</div>
+      </div>
+      <button id="eyeBtn" class="ghost">📷 Add eyes (camera)</button>
       <p class="note">Keep this screen on and the phone face-up. Nothing is recorded; only numbers are sent.</p>
     </section>
 

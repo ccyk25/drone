@@ -1,7 +1,7 @@
 // Turns ear messages into direction-of-arrival detections. Owner: P1.
 // Used by the control screen (P2): createFusion(CONFIG, { onDetection }), then call
 // fusion.ingest(msg) for every realtime message. It emits
-//   { type: 'detection', t, relBearingDeg, confidence, ears }
+//   { type: 'detection', sensor: 'audio' | 'camera', t, relBearingDeg, confidence, ears }
 // relBearingDeg is relative to the drone's heading (negative = left).
 import { CONFIG } from '../shared/config.js';
 import { EARS, MSG } from '../shared/protocol.js';
@@ -87,6 +87,7 @@ export function createFusion(config = CONFIG, { onDetection, autoFlush = true } 
 
     onDetection?.({
       type: 'detection',
+      sensor: 'audio',
       t: at,
       relBearingDeg,
       confidence: clamp(confidence, 0, 1),
@@ -102,6 +103,18 @@ export function createFusion(config = CONFIG, { onDetection, autoFlush = true } 
       const buf = (levels[msg.ear] ??= []);
       buf.push({ at, db: msg.db });
       while (buf.length && at - buf[0].at > 5000) buf.shift();
+    }
+
+    // Camera "eyes": a person in view. Direction = that phone's angle + where in the frame the person is.
+    if (msg.type === MSG.SIGHTING) {
+      onDetection?.({
+        type: 'detection',
+        sensor: 'camera',
+        t: at,
+        relBearingDeg: config.ears[msg.ear] + msg.offset * config.camera.halfFovDeg,
+        confidence: clamp(msg.confidence, 0, 1),
+        ears: [msg.ear]
+      });
     }
 
     if (msg.type === MSG.SCREAM) {

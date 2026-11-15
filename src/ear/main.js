@@ -6,6 +6,7 @@ import { joinRoom } from '../realtime/channel.js';
 import { startMic } from './audio.js';
 import { createFloorTracker, createScreamDetector } from './detector.js';
 import { createCalibrator } from './calibrate.js';
+import { loadDetector, startCamera, bestPerson, createSightingGate } from './camera.js';
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -65,6 +66,60 @@ function runEar(room, ear) {
     lastHello = performance.now();
     setInterval(loop, CONFIG.ear.analysisMs);
   });
+
+  // --- Camera "eyes" (optional; independent of the microphone) ---------------
+  let eyesOn = false;
+  $('eyeBtn').addEventListener('click', async () => {
+    if (eyesOn) return;
+    eyesOn = true;
+    $('eyeBtn').classList.add('hidden');
+    $('eyeBox').classList.remove('hidden');
+    const video = $('cam');
+    try {
+      await startCamera(video);
+      $('eyeStatus').textContent = 'Loading person detector…';
+      const model = await loadDetector();
+      $('eyeStatus').textContent = 'Eyes on: looking for people';
+      runEyes(model, video);
+    } catch (err) {
+      $('eyeStatus').textContent = `Camera unavailable: ${err.message}`;
+    }
+  });
+
+  function runEyes(model, video) {
+    const gate = createSightingGate(CONFIG.camera);
+    const canvas = $('camOverlay');
+    const g = canvas.getContext('2d');
+    let busy = false;
+    let seen = 0;
+    setInterval(async () => {
+      if (busy || video.readyState < 2) return;
+      busy = true;
+      try {
+        const preds = await model.detect(video);
+        const w = video.videoWidth, h = video.videoHeight;
+        canvas.width = w; canvas.height = h;
+        g.clearRect(0, 0, w, h);
+        const person = bestPerson(preds, w, CONFIG.camera.minScore);
+        if (person) {
+          const [x, y, bw, bh] = person.bbox;
+          g.strokeStyle = '#ff4d4f'; g.lineWidth = Math.max(3, w / 160);
+          g.strokeRect(x, y, bw, bh);
+          $('eyeStatus').textContent = `Person ${(person.score * 100).toFixed(0)}%`;
+        } else {
+          $('eyeStatus').textContent = `Eyes on: no person · ${seen} sent`;
+        }
+        const sighting = gate.update(person, performance.now());
+        if (sighting) {
+          channel.send({ type: MSG.SIGHTING, ear, t: Date.now(), ...sighting });
+          seen += 1;
+          flash();
+        }
+      } finally {
+        busy = false;
+      }
+    }, CONFIG.camera.intervalMs);
+  }
 
   function loop() {
     const at = performance.now();

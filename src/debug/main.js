@@ -52,6 +52,7 @@ function onMessage(msg) {
     $(`fl-${msg.ear}`).style.left = `${pct(msg.floorDb)}%`;
   }
   if (msg.type === MSG.SCREAM) log(`SCREAM ${msg.ear}: peak ${msg.peakDb.toFixed(1)} dB, ${msg.durationMs.toFixed(0)} ms, conf ${msg.confidence.toFixed(2)}`);
+  if (msg.type === MSG.SIGHTING) log(`📷 SIGHTING ${msg.ear}: person ${(msg.confidence * 100).toFixed(0)}%, offset ${msg.offset.toFixed(2)}`);
   if (msg.type === MSG.CALIBRATION) {
     clapPeaks[msg.ear] = msg.clapPeakDb;
     log(`calibration ${msg.ear}: floor ${msg.floorDb.toFixed(1)} dB, clap ${msg.clapPeakDb.toFixed(1)} dB`);
@@ -71,8 +72,9 @@ setInterval(() => {
 // --- Detection display -------------------------------------------------------
 function onDetection(d) {
   $('bearing').textContent = `${d.relBearingDeg > 0 ? '+' : ''}${d.relBearingDeg.toFixed(0)}°`;
-  $('detStat').textContent = `confidence ${(d.confidence * 100).toFixed(0)}% · fired by ${d.ears.join(', ')}`;
-  log(`DETECTION bearing ${d.relBearingDeg.toFixed(1)}°, conf ${d.confidence.toFixed(2)} (ears ${d.ears.join(',')})`);
+  const icon = d.sensor === 'camera' ? '📷' : '👂';
+  $('detStat').textContent = `${icon} ${d.sensor} · confidence ${(d.confidence * 100).toFixed(0)}% · from ${d.ears.join(', ')}`;
+  log(`${icon} DETECTION (${d.sensor}) bearing ${d.relBearingDeg.toFixed(1)}°, conf ${d.confidence.toFixed(2)} (ears ${d.ears.join(',')})`);
   drawCompass(d.relBearingDeg);
 }
 
@@ -118,5 +120,11 @@ document.querySelectorAll('[data-sim]').forEach((btn) => {
       if (ear === near || db > -25) fusion.ingest({ type: MSG.SCREAM, ear, t, peakDb: db, durationMs: 350, confidence: 0.9 });
     }
     log(`simulated scream near ${near}`);
+  };
+});
+document.querySelectorAll('[data-simcam]').forEach((btn) => {
+  btn.onclick = () => {
+    fusion.ingest({ type: MSG.SIGHTING, ear: btn.dataset.simcam, t: Date.now(), confidence: 0.85, offset: 0.2 });
+    log(`simulated camera sighting on ${btn.dataset.simcam}`);
   };
 });
