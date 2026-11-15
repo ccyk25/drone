@@ -15,7 +15,7 @@ import { createUI } from './ui.js';
 import { createOps } from './ops.js';
 
 const urlParams = new URLSearchParams(location.search);
-export const MOCKS = urlParams.has('mocks') ? urlParams.get('mocks') !== '0' : true;
+export const MOCKS = urlParams.has('mocks') ? urlParams.get('mocks') !== '0' : false;   // real modules have landed; ?mocks=1 to force mocks
 
 // ---- timing knobs (P2-only; not in config.js) ----
 const SCAN_EVERY_MS = 1000;   // negative scan = one "listen" per simulated second
@@ -226,7 +226,7 @@ const CH = pickFns(realChannel, mock.channel, ['joinRoom']);
 const FU = pickFns(realFusion, mock.fusion, ['createFusion']);
 const computeGains = (!MOCKS && (realCalib?.computeGains || realFusion?.computeGains)) || mock.computeGains;
 const validate = realProtocol?.validate || (m => !!m && typeof m === 'object' && typeof m.type === 'string');
-const scenarioList = (!MOCKS && (realScenario?.SURVIVORS || realScenario?.default)) || null;
+const scenarioList = (!MOCKS && [realScenario?.SURVIVORS, realScenario?.default].find((l) => Array.isArray(l) && l.length)) || null;   // empty list → keep P2's scenario people
 
 // ---- small adapters (tolerate slightly different return shapes from search.js) ----
 const toXY = v => Array.isArray(v) ? { x: v[0], y: v[1] } : { x: v.x, y: v.y };
@@ -383,10 +383,10 @@ function handleDetection(det) {
   S.applyDetection(grid, xy, abs, det.confidence, CONFIG);
   const R = CONFIG.pod.hearingRadiusM, r = abs * Math.PI / 180;
   const pinXY = { x: xy.x + Math.sin(r) * R * EST_RANGE_FRAC, y: xy.y + Math.cos(r) * R * EST_RANGE_FRAC };
-  view.addPin(pinXY, det.confidence, det.source === 'sim' ? 'Simulated scream' : `Scream (${(det.ears || []).join('+')})`);
+  view.addPin(pinXY, det.confidence, det.source === 'sim' ? 'Simulated scream' : det.sensor === 'camera' ? `Person seen · camera (${(det.ears || []).join('+')})` : `Scream (${(det.ears || []).join('+')})`);
   view.showBearing(xy, abs, R);
   if (firstDetMs == null && t0Sim != null) firstDetMs = simMs - t0Sim;
-  ui.log(`🔴 Detection · bearing ${det.relBearingDeg >= 0 ? '+' : ''}${det.relBearingDeg.toFixed(0)}° rel (${abs.toFixed(0)}° abs) · conf ${(det.confidence * 100).toFixed(0)}%`, 'det');
+  ui.log(`${det.sensor === 'camera' ? '📷 Camera' : '🔴 Detection'} · bearing ${det.relBearingDeg >= 0 ? '+' : ''}${det.relBearingDeg.toFixed(0)}° rel (${abs.toFixed(0)}° abs) · conf ${(det.confidence * 100).toFixed(0)}%`, 'det');
   // mark survivors found by a pin landing near them (simulated button screams aren't a real voice, so they never "find" anyone)
   if (det.source !== 'sim')
     for (const s of survivors) if (!s.found && Math.hypot(s.x - pinXY.x, s.y - pinXY.y) <= FOUND_PIN_M) markFound(s, 'pin');
