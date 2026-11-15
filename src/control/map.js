@@ -219,6 +219,17 @@ export function createMap(elId, config) {
     setTimeout(() => bearingLine.setLatLngs([]), 4000);
   }
 
+  // 🚩 confirmed-survivor flag with a detail card (P1 response flow)
+  function addFlag(xy, html) {
+    const icon = L.divIcon({
+      className: 'flag-icon', iconSize: [36, 36], iconAnchor: [6, 34],
+      html: '<div style="font-size:32px;line-height:1;filter:drop-shadow(0 2px 3px rgba(0,0,0,.6))">🚩</div>',
+    });
+    const m = L.marker(xyToLatLng(xy.x, xy.y), { icon, zIndexOffset: 1000 }).addTo(pinLayer);
+    m.bindPopup(html, { autoClose: false, closeOnClick: false, maxWidth: 300 }).openPopup();
+    return m;
+  }
+
   function addPin(xy, confidence, label) {
     const pct = Math.round(confidence * 100);
     const icon = L.divIcon({
@@ -259,7 +270,7 @@ export function createMap(elId, config) {
   function resetTrail() { trailPts = []; trail.setLatLngs([]); pinLayer.clearLayers(); }
 
   return {
-    map, buildGrid, updateGrid, setHeatmap, fitToHud, setImagery, startAreaSelect, updateDrone, showBearing, addPin, updateSurvivors, flash, resetTrail,
+    map, buildGrid, updateGrid, setHeatmap, fitToHud, setImagery, startAreaSelect, updateDrone, showBearing, addPin, addFlag, updateSurvivors, flash, resetTrail,
     setFollow(on) { follow = !!on; },
     onClick(fn) { map.on('click', e => fn(latLngToXY(e.latlng), e.latlng)); },
   };

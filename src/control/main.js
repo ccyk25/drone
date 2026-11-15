@@ -13,6 +13,7 @@ import { createDrone, bearingTo, wrapDeg } from './drone.js';
 import { startRotorNoise, stopRotorNoise, setRotorVolume } from './noise.js';
 import { createUI } from './ui.js';
 import { createOps } from './ops.js';
+import { createResponder } from './response.js';   // P1: camera → heat → voice → confirm → speaker + flag
 
 const urlParams = new URLSearchParams(location.search);
 export const MOCKS = urlParams.has('mocks') ? urlParams.get('mocks') !== '0' : false;   // real modules have landed; ?mocks=1 to force mocks
@@ -378,6 +379,13 @@ function currentNoiseDb() {
 
 // ---- detections ----
 function handleDetection(det) {
+  if (det.source !== 'survivor') {                     // real phones (camera / mic) and the simulate buttons
+    if (!running) { running = true; ui.setStarted(true); if (t0Sim == null) t0Sim = simMs; }
+    if (firstDetMs == null && t0Sim != null) firstDetMs = simMs - t0Sim;
+    responder.onDetection(det, performance.now());
+    redrawGrid();
+    return;
+  }
   const xy = { x: drone.state.x, y: drone.state.y };
   const abs = wrapDeg(drone.state.headingDeg + det.relBearingDeg);
   S.applyDetection(grid, xy, abs, det.confidence, CONFIG);
@@ -407,6 +415,7 @@ function markFound(s, how) {
 
 // hidden survivors occasionally call out; heard with the engine's own POD
 function survivorCalls() {
+  if (responder.busy() || Object.values(ears).some(e => Date.now() - e.last < 5000)) return;   // live demo: real people only
   const pending = survivors.filter(s => !s.found);
   if (!pending.length) return;
   const s = pending[Math.random() * pending.length | 0];
@@ -417,6 +426,27 @@ function survivorCalls() {
   const rel = wrapDeg(bearingTo(drone.state, s) - drone.state.headingDeg);
   handleDetection({ type: 'detection', t: Date.now(), relBearingDeg: rel, confidence: Math.min(0.95, 0.35 + 0.6 * pod), ears: ['sim'], source: 'survivor' });
 }
+
+// ---- live rescue response (P1) ----
+const responder = createResponder({
+  get drone() { return drone; },
+  setTarget: (xy) => { current = { i: -1, ...xy }; drone.setTarget(xy, 'investigate'); },
+  applyDetection: (xy, abs, conf) => S.applyDetection(grid, xy, abs, conf, CONFIG),
+  addPin: (xy, conf, label) => view.addPin(xy, conf, label),
+  addFlag: (xy, html) => view.addFlag?.(xy, html),
+  showBearing: (xy, abs, len) => view.showBearing(xy, abs, len),
+  flash: (xy) => view.flash(xy),
+  log: (html, kind) => ui.log(html, kind),
+  scenario: () => scenarioId,
+  toLatLng: (x, y) => xyToLatLng(x, y),
+  hud: document.getElementById('hud'),
+});
+// rehearsal without a camera: keys Q / P / E = person seen left / ahead / right
+window.addEventListener('keydown', (ev) => {
+  const off = { q: -0.7, p: 0, e: 0.7 }[ev.key?.toLowerCase()];
+  if (off === undefined || ev.target?.tagName === 'INPUT') return;
+  handleDetection({ type: 'detection', sensor: 'camera', t: Date.now(), relBearingDeg: off * (CONFIG.camera?.halfFovDeg ?? 30), confidence: 0.9, ears: ['C'], source: 'sim-camera' });
+});
 
 // ---- realtime ears ----
 const fusion = FU.createFusion(CONFIG, { onDetection: det => handleDetection(det) });
@@ -435,7 +465,8 @@ const channel = CH.joinRoom(ROOM, {
       if (calibPeaks) calibPeaks[msg.ear] = Math.max(calibPeaks[msg.ear] ?? -Infinity, msg.peakDb);
       else ui.log(`Ear ${msg.ear} heard a scream · ${msg.peakDb?.toFixed?.(0)} dB`);
     }
-    if (msg.type === 'level' || msg.type === 'scream' || msg.type === 'hello') fusion.ingest(msg);
+    if (msg.type === 'level' || msg.type === 'scream' || msg.type === 'hello' || msg.type === 'sighting') fusion.ingest(msg);
+    if (msg.type === 'sighting') e.last = Date.now();
   },
 });
 
@@ -522,8 +553,11 @@ function loop() {
   if (callAcc >= CALL_EVERY_MS) { callAcc -= CALL_EVERY_MS; survivorCalls(); }
   if (!rotorOn) for (const s of survivors) if (!s.found && Math.hypot(s.x - xy.x, s.y - xy.y) <= FOUND_PASS_M) markFound(s, 'pass');
 
-  // 3. pick the next waypoint on arrival (or if we have none)
-  if (arrived || !drone.target) {
+  // 3. live response owns the drone while busy; otherwise pick the next waypoint
+  const resp = responder.tick(performance.now(), arrived);
+  if (resp === 'resume') { const w = waypointXY(xy); if (w) { current = w; drone.setTarget(w, 'search'); } }
+  if (responder.busy()) { /* response flow is steering */ }
+  else if (arrived || !drone.target) {
     if (arrived && drone.state.mode === 'investigate') ui.log('Investigation point reached · resuming search');
     const w = waypointXY(xy);
     if (w) {
