@@ -124,15 +124,25 @@ function runEar(room, ear) {
     const canvas = $('camOverlay');
     const g = canvas.getContext('2d');
     const isVideo = source.tagName === 'VIDEO';
+    // Detect on a full-resolution copy of the frame so box coordinates are always in the source's
+    // own pixels (the detector otherwise measures an <img> at its on-screen size → boxes in the wrong place).
+    const frame = document.createElement('canvas');
+    const fg = frame.getContext('2d', { willReadFrequently: true });
+    const preview = document.createElement('canvas');
+    const pg = preview.getContext('2d');
+    const FRAME_MS = 500;
+    let lastFrameSent = 0;
     let busy = false;
     let seen = 0;
     setInterval(async () => {
       if (busy || (isVideo && source.readyState < 2)) return;
       busy = true;
       try {
-        const preds = await model.detect(source);
         const w = isVideo ? source.videoWidth : source.naturalWidth;
         const h = isVideo ? source.videoHeight : source.naturalHeight;
+        if (frame.width !== w || frame.height !== h) { frame.width = w; frame.height = h; }
+        fg.drawImage(source, 0, 0, w, h);
+        const preds = await model.detect(frame);
         canvas.width = w; canvas.height = h;
         g.clearRect(0, 0, w, h);
         const person = bestPerson(preds, w, CONFIG.camera.minScore);
@@ -150,6 +160,16 @@ function runEar(room, ear) {
           $('eyeStatus').textContent = `Eyes on: no person · ${seen} sent`;
         }
         window.__eyes = { person: person ? +person.score.toFixed(2) : 0, seen };
+        // small live preview for the mission map's "Drone camera" window (~2 per second, not stored)
+        const nowMs = performance.now();
+        if (nowMs - lastFrameSent >= FRAME_MS) {
+          lastFrameSent = nowMs;
+          const pw = 240, ph = Math.round((h / w) * pw) || 180;
+          if (preview.width !== pw || preview.height !== ph) { preview.width = pw; preview.height = ph; }
+          pg.drawImage(frame, 0, 0, pw, ph);
+          const box = person ? person.bbox.map((v, k) => v / (k % 2 === 0 ? w : h)) : null;
+          channel.send({ type: MSG.FRAME, ear, t: Date.now(), jpg: preview.toDataURL('image/jpeg', 0.55), box, score: person ? person.score : 0 });
+        }
         const sighting = gate.update(person, performance.now());
         if (sighting) {
           channel.send({ type: MSG.SIGHTING, ear, t: Date.now(), ...sighting });

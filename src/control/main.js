@@ -13,9 +13,11 @@ import { createDrone, bearingTo, wrapDeg } from './drone.js';
 import { startRotorNoise, stopRotorNoise, setRotorVolume } from './noise.js';
 import { createUI } from './ui.js';
 import { createOps } from './ops.js';
+import { createResponder } from './response.js';
+import { createConnect } from './connect.js';   // P1: Connect-the-drone sheet + live Drone camera window   // P1: camera → heat → voice → confirm → speaker + flag
 
 const urlParams = new URLSearchParams(location.search);
-export const MOCKS = urlParams.has('mocks') ? urlParams.get('mocks') !== '0' : true;
+export const MOCKS = urlParams.has('mocks') ? urlParams.get('mocks') !== '0' : false;   // real modules have landed; ?mocks=1 to force mocks
 
 // ---- timing knobs (P2-only; not in config.js) ----
 const SCAN_EVERY_MS = 1000;   // negative scan = one "listen" per simulated second
@@ -232,7 +234,7 @@ const CH = pickFns(realChannel, mock.channel, ['joinRoom']);
 const FU = pickFns(realFusion, mock.fusion, ['createFusion']);
 const computeGains = (!MOCKS && (realCalib?.computeGains || realFusion?.computeGains)) || mock.computeGains;
 const validate = realProtocol?.validate || (m => !!m && typeof m === 'object' && typeof m.type === 'string');
-const scenarioList = (!MOCKS && (realScenario?.SURVIVORS || realScenario?.default)) || null;
+const scenarioList = (!MOCKS && [realScenario?.SURVIVORS, realScenario?.default].find((l) => Array.isArray(l) && l.length)) || null;   // empty list → keep P2's scenario people
 
 // ---- small adapters (tolerate slightly different return shapes from search.js) ----
 const toXY = v => Array.isArray(v) ? { x: v[0], y: v[1] } : { x: v.x, y: v.y };
@@ -247,7 +249,7 @@ function makeArea(b) {          // b = { x0, y0, x1, y1 } in local metres
   const cell = Math.max(base, Math.ceil(Math.max(wM, hM) / MAX_CELLS_SIDE / 10) * 10);
   const cols = Math.max(2, Math.round(wM / cell)), rows = Math.max(2, Math.round(hM / cell));
   const cfg = { ...CONFIG, grid: { ...CONFIG.grid, cols, rows, cellMeters: cell } };
-  const grid = S.createGrid(cfg), n = cols * rows;
+  const grid = S.createGrid(cfg, null), n = cols * rows;   // null cover: the shared cover map only fits the default grid
   const ec = Array.from({ length: n }, (_, i) => toXY(S.cellCenter(grid, i)));
   const mx = ec.reduce((a, c) => a + c.x, 0) / n, my = ec.reduce((a, c) => a + c.y, 0) / n;
   const cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2, off = { x: cx - mx, y: cy - my };
@@ -311,7 +313,7 @@ const ui = createUI(document.getElementById('hud'), {
   scenario: scenarioId,
   site: site.id,
   sites: Object.fromEntries(Object.entries(SCENARIOS).map(([k, v]) => [k, v.sites.map(({ id, name, event }) => ({ id, name, event }))])),
-  earUrl: ear => new URL(`ear.html?room=${ROOM}&ear=${ear}`, location.href).href,
+  earUrl: ear => new URL(`ear.html?room=${ROOM}&ear=${ear}${ear === 'C' ? '&mode=eyes' : ''}`, location.href).href,   // C = camera phone (eyes mode)
   handlers: {
     onStart: () => { running = !running; ui.setStarted(running); if (running && t0Sim == null) t0Sim = simMs; ui.log(running ? 'Search started' : 'Paused'); },
     onReset: () => reset(),
@@ -521,17 +523,27 @@ function currentNoiseDb() {
 // ---- detections ----
 // det comes from drone d (default: the selected drone, which carries the phone ears / sim buttons)
 function handleDetection(det, d = sel()) {
-  if (d.status === 'landed' || d.status === 'rtb') { ui.log(`<b>${d.id}</b> is on the ground: select a flying drone to listen`, 'warn'); return; }
+  if (det.source !== 'survivor') {                     // real phones (camera / mic) and the simulate buttons → P1's live response
+    if (!responder.busy()) respD = sel();              // the selected drone flies the response
+    d = respD;
+    if (d.status === 'landed' || d.status === 'rtb') { ui.log(`<b>${d.id}</b> is on the ground: select a flying drone to respond`, 'warn'); return; }
+    if (!running) { running = true; ui.setStarted(true); if (t0Sim == null) t0Sim = simMs; }
+    if (firstDetMs == null && t0Sim != null) firstDetMs = simMs - t0Sim;
+    responder.onDetection(det, performance.now());
+    redrawGrid();
+    return;
+  }
+  if (d.status === 'landed' || d.status === 'rtb') return;
   const drone = d.drone;
   const xy = { x: drone.state.x, y: drone.state.y };
   const abs = wrapDeg(drone.state.headingDeg + det.relBearingDeg);
   detectAll(xy, abs, det.confidence);
   const R = CONFIG.pod.hearingRadiusM, r = abs * Math.PI / 180;
   const pinXY = { x: xy.x + Math.sin(r) * R * EST_RANGE_FRAC, y: xy.y + Math.cos(r) * R * EST_RANGE_FRAC };
-  view.addPin(pinXY, det.confidence, `${d.id} · ${det.source === 'sim' ? 'Simulated scream' : `Scream (${(det.ears || []).join('+')})`}`);
+  view.addPin(pinXY, det.confidence, `${d.id} · ${det.sensor === 'camera' ? 'Person seen · camera' : 'Scream (simulated survivor)'}`);
   view.showBearing(xy, abs, R);
   if (firstDetMs == null && t0Sim != null) firstDetMs = simMs - t0Sim;
-  ui.log(`🔴 <b>${d.id}</b> detection · bearing ${det.relBearingDeg >= 0 ? '+' : ''}${det.relBearingDeg.toFixed(0)}° rel (${abs.toFixed(0)}° abs) · conf ${(det.confidence * 100).toFixed(0)}%`, 'det');
+  ui.log(`${det.sensor === 'camera' ? '📷' : '🔴'} <b>${d.id}</b> detection · bearing ${det.relBearingDeg >= 0 ? '+' : ''}${det.relBearingDeg.toFixed(0)}° rel (${abs.toFixed(0)}° abs) · conf ${(det.confidence * 100).toFixed(0)}%`, 'det');
   // mark survivors found by a pin landing near them (simulated button screams aren't a real voice, so they never "find" anyone)
   if (det.source !== 'sim')
     for (const s of survivors) if (!s.found && Math.hypot(s.x - pinXY.x, s.y - pinXY.y) <= FOUND_PIN_M) markFound(s, 'pin', d);
@@ -631,6 +643,7 @@ function pushSwarmUiThrottled() { const now = performance.now(); if (now - lastS
 
 // hidden survivors occasionally call out; heard with the engine's own POD
 function survivorCalls(d) {
+  if ((responder.busy() && d === respD) || Object.values(ears).some(e => Date.now() - e.last < 5000)) return;   // live demo: real people only
   const pending = survivors.filter(s => !s.found);
   if (!pending.length) return;
   const s = pending[Math.random() * pending.length | 0];
@@ -643,6 +656,51 @@ function survivorCalls(d) {
   handleDetection({ type: 'detection', t: Date.now(), relBearingDeg: rel, confidence: Math.min(0.95, 0.35 + 0.6 * pod), ears: ['sim'], source: 'survivor' }, d);
 }
 
+// ---- live rescue response (P1) ----
+// P2: the response flies the drone that was selected when it started (respD); the other drones keep searching.
+let respD = null;
+let liveFlags = 0;
+const responder = createResponder({
+  get drone() { return (respD || sel()).drone; },
+  setTarget: (xy) => { const d = respD || sel(); d.status = 'active'; d.current = { i: -1, ...xy }; d.drone.setTarget(xy, 'investigate'); },
+  applyDetection: (xy, abs, conf) => detectAll(xy, abs, conf),
+  addPin: (xy, conf, label) => view.addPin(xy, conf, `${(respD || sel()).id} · ${label}`),
+  addFlag: (xy, html) => {
+    view.addFlag?.(xy, html);
+    // a confirmed live survivor also dispatches the rescue drone R1 and notifies the officials
+    notifyRescue({ x: xy.x, y: xy.y, label: `Live survivor #${++liveFlags}` }, respD || sel());
+  },
+  showBearing: (xy, abs, len) => view.showBearing(xy, abs, len),
+  flash: (xy) => view.flash(xy),
+  log: (html, kind) => ui.log(html, kind),
+  scenario: () => scenarioId,
+  toLatLng: (x, y) => xyToLatLng(x, y),
+  hud: document.getElementById('hud'),
+});
+// rehearsal without a camera: keys Q / P / E = person seen left / ahead / right
+window.addEventListener('keydown', (ev) => {
+  const off = { q: -0.7, p: 0, e: 0.7 }[ev.key?.toLowerCase()];
+  if (off === undefined || ev.target?.tagName === 'INPUT') return;
+  handleDetection({ type: 'detection', sensor: 'camera', t: Date.now(), relBearingDeg: off * (CONFIG.camera?.halfFovDeg ?? 30), confidence: 0.9, ears: ['C'], source: 'sim-camera' });
+});
+
+// ---- Connect the drone (setup sheet) + Drone camera window (P1) ----
+const connect = createConnect({
+  room: ROOM,
+  earUrl: ear => new URL(`ear.html?room=${ROOM}&ear=${ear}${ear === 'C' ? '&mode=eyes' : ''}`, location.href).href,
+  onCalibrate: () => calibrate(),
+  onClose: () => document.querySelector('[data-act="qr"]')?.classList.remove('on'),
+});
+{ const st = document.createElement('style'); st.textContent = '.qrpop{display:none!important}'; document.head.appendChild(st); }
+document.addEventListener('click', (ev) => {               // "Join ears" opens the new sheet instead of the old strip
+  const b = ev.target.closest?.('[data-act="qr"]');
+  if (!b) return;
+  ev.stopImmediatePropagation(); ev.preventDefault();
+  connect.toggle(); b.classList.toggle('on', connect.isOpen());
+}, true);
+{ const setCalib = ui.setCalibStatus.bind(ui); ui.setCalibStatus = (t) => { setCalib(t); connect.setCalibStatus(t); }; }
+if (!urlParams.has('nosetup')) setTimeout(() => connect.open(), 300);   // start with the setup sheet
+
 // ---- realtime ears ----
 const fusion = FU.createFusion(CONFIG, { onDetection: det => handleDetection(det) });
 let calibPeaks = null;
@@ -651,8 +709,9 @@ const channel = CH.joinRoom(ROOM, {
     if (!validate(msg)) return;
     const e = msg.ear && (ears[msg.ear] ||= { db: null, floorDb: null, last: 0, screamUntil: 0 });
     if (msg.type === 'hello') { e.last = Date.now(); ui.log(`Ear <b>${msg.ear}</b> joined`); }
+    if (msg.type === 'frame') { e.last = Date.now(); e.frameAt = Date.now(); connect.onFrame(msg); return; }
     if (msg.type === 'level') {
-      Object.assign(e, { db: msg.db, floorDb: msg.floorDb, last: Date.now() });
+      Object.assign(e, { db: msg.db, floorDb: msg.floorDb, last: Date.now(), levelAt: Date.now() });
       if (calibPeaks) calibPeaks[msg.ear] = Math.max(calibPeaks[msg.ear] ?? -Infinity, msg.db);
     }
     if (msg.type === 'scream') {
@@ -660,7 +719,8 @@ const channel = CH.joinRoom(ROOM, {
       if (calibPeaks) calibPeaks[msg.ear] = Math.max(calibPeaks[msg.ear] ?? -Infinity, msg.peakDb);
       else ui.log(`Ear ${msg.ear} heard a scream · ${msg.peakDb?.toFixed?.(0)} dB`);
     }
-    if (msg.type === 'level' || msg.type === 'scream' || msg.type === 'hello') fusion.ingest(msg);
+    if (msg.type === 'level' || msg.type === 'scream' || msg.type === 'hello' || msg.type === 'sighting') fusion.ingest(msg);
+    if (msg.type === 'sighting') e.last = Date.now();
   },
 });
 
@@ -678,8 +738,9 @@ async function calibrate() {
   const peaks = calibPeaks; calibPeaks = null;
   if (Object.keys(peaks).length === 0) { ui.setCalibStatus('No clap heard. Try again.'); return; }
   const gains = computeGains(peaks);
+  fusion.setGains?.(gains);                       // apply to direction finding (was computed but never used)
   channel.send({ type: 'calibrate', phase: 'done', gains });
-  ui.setCalibStatus(`Gains: ${Object.entries(gains).map(([k, v]) => `${k} ${v >= 0 ? '+' : ''}${v} dB`).join(' · ')}`);
+  ui.setCalibStatus(`Gains: ${Object.entries(gains).map(([k, v]) => { const db = 20 * Math.log10(v); return `${k} ${db >= 0 ? '+' : ''}${db.toFixed(1)} dB`; }).join(' · ')}`);
   ui.log('Calibration done');
 }
 
@@ -751,6 +812,7 @@ function loop() {
   for (const k of ['L', 'C', 'R']) {
     const e = ears[k];
     ui.setEarStatus(k, e ? { connected: now - e.last < 3000, db: e.db, floorDb: e.floorDb, screaming: now < e.screamUntil } : {});
+    connect.setEar(k, e ? { joined: now - e.last < 6000, listening: now - (e.levelAt || 0) < 3000, watching: now - (e.frameAt || 0) < 3000, db: e.db, screaming: now < e.screamUntil } : {});
   }
   if (!running) return;
   releaseFinds();
@@ -781,6 +843,12 @@ function loop() {
     // people layer: hidden survivors call out; close passes in quiet find them
     if (callNow) survivorCalls(d);
     if (!rotorOn) for (const s of survivors) if (!s.found && Math.hypot(s.x - xy.x, s.y - xy.y) <= FOUND_PASS_M) markFound(s, 'pass', d);
+
+    // P1's live response owns its drone while busy
+    if (d === respD) {
+      if (responder.tick(performance.now(), arrived) === 'resume') { d.current = null; drone.setTarget(null); respD = null; }
+      else if (responder.busy()) continue;
+    }
     if (d.status !== 'active') continue;
 
     // 3. next waypoint inside this drone's own area, on arrival (or if it has none)

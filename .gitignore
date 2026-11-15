@@ -6,3 +6,8 @@ dist/
 .claude/
 
 .vercel
+
+# YOLO experiment (not used in the app; ~64 MB of models)
+public/models/
+src/lab/yolo.js
+yolo-lab.html
